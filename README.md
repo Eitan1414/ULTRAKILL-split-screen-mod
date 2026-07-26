@@ -1,58 +1,75 @@
 # ULTRAKILL Split-Screen Mod
 
-Experimental Windows split-screen launcher and BepInEx bridge for **ULTRAKILL**.
-
-## Version 0.2 features
-
-- Launches **one to four** ULTRAKILL processes.
-- Automatic two-player vertical layout and three/four-player 2×2 grid.
-- Vertical, horizontal and grid layout overrides.
-- New `fit` aspect mode that keeps every game window at a real 16:9 ratio instead of stretching it.
-- Per-process controller isolation through Unity's Input System.
-- Configurable controller assignment for players 1–4.
-- Automatic Jaket host/join bridge when Jaket is installed.
-- Steam installation detection, borderless positioning and background execution.
-- Self-contained Windows x64 launcher and installable ZIP built by GitHub Actions.
+Experimental Windows split-screen launcher and BepInEx bridge for **ULTRAKILL**, supporting one to four local instances.
 
 > [!IMPORTANT]
-> ULTRAKILL is a single-player game. This project starts separate game processes; Jaket is still responsible for synchronizing players, enemies and levels. Multiple local Jaket clients generally need **distinct Steam identities**. This project does not bypass Steam, DRM or account restrictions.
+> This project uses multiple ULTRAKILL processes. Jaket supplies multiplayer synchronization, while this project handles launching, windows, controller routing and optional lobby automation. Jaket still normally needs a distinct usable Steam identity for each player process.
 
-## Controller compatibility
+## Version 0.3 highlights
 
-The bridge selects a different Unity Input System `Gamepad` for each process and disables the other gamepads inside that process.
-
-Expected support:
-
-- Xbox 360 / Xbox One / Xbox Series controllers: normally detected directly as XInput gamepads.
-- PlayStation 4 / PlayStation 5 controllers: supported when Unity, Steam Input or DS4Windows exposes them as a gamepad.
-- Nintendo Switch Pro Controller and Joy-Con adapters: supported when Steam Input, BetterJoy or another adapter exposes them as a gamepad.
-- Generic controllers: supported when Windows/Unity reports them as a `Gamepad`.
-
-The order is zero-based. With this configuration, player 1 gets the first detected gamepad, player 2 the second, and so on:
-
-```json
-"controllerAssignments": [0, 1, 2, 3]
-```
-
-The BepInEx log lists the detected gamepads. If a PlayStation or Switch controller is not detected, enable Steam Input or use a trusted XInput adapter before starting the launcher.
-
-## Jaket compatibility
-
-Install Jaket normally into ULTRAKILL's `BepInEx/plugins` directory. The split-screen bridge waits for Jaket to initialize, asks the host process to create a private lobby, writes the lobby code to a temporary text file and asks the other processes to join it.
-
-The integration uses Jaket's public runtime methods through reflection, so the project does not include or redistribute Jaket code.
-
-Known limitation: multiple processes using the same Steam account are not separate Jaket members. For genuine two-to-four-player synchronization, every process must have a distinct usable Steam identity/session. If automatic joining is unavailable in your setup, set `autoHostJoin` to `false` and join manually through Jaket.
+- Press **Ctrl+P while playing solo** to open an in-game split-screen popup.
+- Keep the current game as player 1 and launch only the additional players.
+- Choose 2, 3 or 4 total player windows.
+- Choose automatic controller discovery, Xbox/XInput, PlayStation PS4/PS5, or Nintendo Switch Pro mapping.
+- See the controller names detected by Unity before launching.
+- Put the entire split-screen layout on the primary monitor or the second monitor.
+- Optionally fill the whole target monitor, or keep every window at 16:9.
+- Correct active camera aspect ratios after windows are resized.
+- Automatically create a private Jaket lobby for player 1 and pass its code to the other instances.
 
 ## Installation
 
-1. Install BepInEx 5 for ULTRAKILL and run the game once.
-2. Install Jaket into the same BepInEx installation if cooperative synchronization is wanted.
-3. Download the latest `ULTRAKILL-SplitScreen-*.zip` artifact from the repository's **Actions** tab.
-4. Copy the ZIP's `BepInEx` folder into the ULTRAKILL folder.
-5. Keep `ULTRAKILLSplitScreen.Launcher.exe` and `splitscreen.json` together.
-6. Connect all controllers before launching.
-7. Run `ULTRAKILLSplitScreen.Launcher.exe`.
+1. Install **BepInEx 5** for ULTRAKILL and start the game once.
+2. Install **Jaket** separately if you want the players to share the same level.
+3. Download the latest `ULTRAKILL-SplitScreen-v0.3.0-win-x64` artifact from **Actions**.
+4. Extract the **entire ZIP directly into the ULTRAKILL game folder**.
+5. Confirm that these files exist:
+
+```text
+ULTRAKILL/
+├── ULTRAKILLSplitScreen.Launcher.exe
+├── splitscreen.json
+└── BepInEx/
+    └── plugins/
+        └── ULTRAKILLSplitScreen/
+            └── ULTRAKILLSplitScreen.Plugin.dll
+```
+
+The launcher must remain in the ULTRAKILL root folder for the in-game `Ctrl+P` shortcut.
+
+## Starting from a solo game
+
+1. Start ULTRAKILL normally.
+2. Enter a level or remain in the menu.
+3. Press **Ctrl+P**.
+4. Choose the total number of players: 2, 3 or 4.
+5. Choose the controller mapping profile:
+   - automatic search;
+   - Xbox / XInput;
+   - PlayStation PS4 / PS5;
+   - Nintendo Switch Pro.
+6. Choose the primary or second monitor.
+7. Enable **Fill the target screen** to occupy the complete monitor, or leave it disabled to keep 16:9 windows.
+8. Select **Activate split-screen**.
+
+The current process becomes player 1. The launcher attaches to its window and starts players 2–4 as required.
+
+## Second-monitor mode
+
+The popup can move the complete split-screen layout onto monitor 2. Windows uses the monitor's real desktop coordinates, so monitors positioned to the left, right, above or below the primary display are supported.
+
+If monitor 2 is requested but Windows cannot find it, the launcher safely falls back to the primary monitor and prints a warning.
+
+## Controller mapping
+
+The plugin isolates one Unity Input System gamepad per process.
+
+- `auto` accepts all gamepads in Unity's detected order and is recommended for mixed controller types.
+- `xbox` matches Xbox and XInput names.
+- `playstation` matches DualShock, DualSense, PlayStation, Sony and common Wireless Controller names.
+- `switch` matches Nintendo, Switch, Pro Controller and Joy-Con names.
+
+Connect every controller before activating split-screen. Steam Input, DS4Windows or a compatible adapter may be needed when a controller is not exposed to Unity as a gamepad.
 
 ## Configuration
 
@@ -63,11 +80,13 @@ Known limitation: multiple processes using the same Steam account are not separa
   "layout": "auto",
   "aspectMode": "fit",
   "targetAspectRatio": "16:9",
+  "targetMonitor": 0,
   "windowGapPixels": 4,
   "launchDelayMs": 2500,
   "windowReadyTimeoutMs": 30000,
   "borderless": true,
   "controllerIsolation": true,
+  "controllerProfile": "auto",
   "controllerAssignments": [0, 1, 2, 3],
   "mutedPlayers": [],
   "jaket": {
@@ -82,35 +101,25 @@ Known limitation: multiple processes using the same Steam account are not separa
 }
 ```
 
-### Layouts
+`targetMonitor` is zero-based in JSON: `0` is the primary monitor and `1` is the second monitor.
 
-- `auto`: vertical for two players; 2×2 grid for three or four players.
-- `vertical`: all windows placed in columns.
-- `horizontal`: all windows placed in rows.
-- `grid`: 2×2 grid for three/four players.
-
-### Aspect modes
-
-- `fit`: preserves `targetAspectRatio` and centers each window inside its split-screen tile. This prevents the stretched image from version 0.1. Empty space around a two-player window is expected because two 16:9 pictures cannot completely fill one 16:9 monitor without cropping or distortion.
-- `stretch`: fills the complete tile, matching the old behavior.
-
-A target ratio can be written as `16:9`, `4:3`, `21:9` or a decimal value.
-
-### Command-line overrides
+## Launcher command line
 
 ```powershell
-ULTRAKILLSplitScreen.Launcher.exe --players 4 --layout grid --aspect-mode fit
+ULTRAKILLSplitScreen.Launcher.exe --players 4 --monitor 2 --controller-profile auto --fill-screen
 ```
 
-Other options:
+Attach an existing solo process manually:
 
-```text
---game <path>
---players <1-4>
---layout <auto|vertical|horizontal|grid>
---aspect-mode <fit|stretch>
---dry-run
+```powershell
+ULTRAKILLSplitScreen.Launcher.exe --attach-pid 12345 --players 3 --monitor 2
 ```
+
+Available options include `--players`, `--layout`, `--aspect-mode`, `--monitor`, `--controller-profile`, `--attach-pid`, `--fill-screen` and `--dry-run`.
+
+## Important Jaket limitation
+
+Jaket's lobby code can be automated, but its members are identified through Steam. Multiple ULTRAKILL processes running under the same Steam account may not become distinct Jaket players. This project does not bypass Steam, DRM or account restrictions.
 
 ## Building locally
 
@@ -122,16 +131,6 @@ dotnet build ULTRAKILLSplitScreen.sln -c Release
 dotnet publish src/Launcher/ULTRAKILLSplitScreen.Launcher.csproj -c Release -r win-x64 --self-contained true
 ```
 
-The plugin targets `netstandard2.1` and avoids a compile-time dependency on Jaket or Unity Input System by detecting both at runtime.
-
-## Current limitations
-
-- Same-account Steam instances are not distinct Jaket players.
-- Controller isolation depends on ULTRAKILL receiving controllers through Unity Input System. Controllers converted to XInput through Steam Input/DS4Windows/BetterJoy are the most reliable fallback.
-- Keyboard and mouse are not isolated between processes.
-- Saves and most BepInEx configuration files are still shared.
-- Shared pause and cooperative respawn rules are not yet implemented.
-
 ## Legal
 
-This project does not include ULTRAKILL, BepInEx, Jaket, controller drivers or copyrighted game files. You must own and install the game separately.
+This project does not include ULTRAKILL, BepInEx, Jaket or copyrighted game files. You must own and install the game separately.

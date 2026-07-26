@@ -25,7 +25,11 @@ internal static class Program
             string? layoutOverride = ReadOption(args, "--layout");
             string? playersOverride = ReadOption(args, "--players");
             string? aspectOverride = ReadOption(args, "--aspect-mode");
-            bool dryRun = args.Any(argument => string.Equals(argument, "--dry-run", StringComparison.OrdinalIgnoreCase));
+            string? monitorOverride = ReadOption(args, "--monitor");
+            string? profileOverride = ReadOption(args, "--controller-profile");
+            string? attachedPidRaw = ReadOption(args, "--attach-pid");
+            bool fillScreen = HasFlag(args, "--fill-screen");
+            bool dryRun = HasFlag(args, "--dry-run");
 
             if (!string.IsNullOrWhiteSpace(gameOverride))
                 config.GameExecutable = gameOverride;
@@ -35,6 +39,16 @@ internal static class Program
                 config.Players = playerCount;
             if (!string.IsNullOrWhiteSpace(aspectOverride))
                 config.AspectMode = aspectOverride;
+            if (int.TryParse(monitorOverride, out int monitorNumber))
+                config.TargetMonitor = Math.Max(0, monitorNumber - 1);
+            if (!string.IsNullOrWhiteSpace(profileOverride))
+                config.ControllerProfile = profileOverride;
+            if (fillScreen)
+                config.AspectMode = "stretch";
+
+            int? attachedProcessId = int.TryParse(attachedPidRaw, out int parsedPid) && parsedPid > 0
+                ? parsedPid
+                : null;
 
             config.Normalize();
 
@@ -46,9 +60,11 @@ internal static class Program
                 return 2;
             }
 
-            Console.WriteLine("ULTRAKILL Split-Screen Launcher v0.2.0");
+            Console.WriteLine("ULTRAKILL Split-Screen Launcher v0.3.0");
             Console.WriteLine($"Game: {gameExecutable}");
             Console.WriteLine($"Config: {configPath}");
+            if (attachedProcessId is int attachPid)
+                Console.WriteLine($"Attach mode: existing solo process {attachPid}");
             PrintLayoutPreview(config);
 
             if (dryRun)
@@ -57,7 +73,7 @@ internal static class Program
                 return 0;
             }
 
-            var session = new LaunchSession(config, gameExecutable);
+            var session = new LaunchSession(config, gameExecutable, attachedProcessId);
             await session.RunAsync().ConfigureAwait(false);
             return 0;
         }
@@ -81,11 +97,20 @@ internal static class Program
         return null;
     }
 
+    private static bool HasFlag(string[] args, string flag)
+    {
+        return args.Any(argument => string.Equals(argument, flag, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static void PrintLayoutPreview(LauncherConfig config)
     {
+        IReadOnlyList<MonitorDisplay> monitors = NativeWindow.GetMonitors();
+        Console.WriteLine($"Detected monitors: {string.Join(", ", monitors.Select(monitor => $"#{monitor.Index + 1} {monitor.Bounds.Width}x{monitor.Bounds.Height}"))}");
+        Console.WriteLine($"Target monitor: #{config.TargetMonitor + 1}");
         Console.WriteLine($"Players: {config.Players}");
         Console.WriteLine($"Layout: {config.Layout}");
         Console.WriteLine($"Aspect: {config.AspectMode} ({config.TargetAspectRatio})");
+        Console.WriteLine($"Controller profile: {config.ControllerProfile}");
         Console.WriteLine($"Gamepads: {string.Join(", ", Enumerable.Range(1, config.Players).Select(player => $"P{player}=#{config.ControllerFor(player)}"))}");
         Console.WriteLine($"Jaket automation: {(config.Jaket.Enabled && config.Jaket.AutoHostJoin ? "enabled" : "disabled")}");
     }
@@ -95,11 +120,15 @@ internal static class Program
         Console.WriteLine("ULTRAKILL Split-Screen Launcher");
         Console.WriteLine();
         Console.WriteLine("Options:");
-        Console.WriteLine("  --game <path>          Path to ULTRAKILL.exe or its folder");
-        Console.WriteLine("  --players <1-4>        Number of local instances");
-        Console.WriteLine("  --layout <layout>      auto, vertical, horizontal or grid");
-        Console.WriteLine("  --aspect-mode <mode>   fit (no stretching) or stretch");
-        Console.WriteLine("  --dry-run              Detect and validate without launching");
-        Console.WriteLine("  --help                 Show this help");
+        Console.WriteLine("  --game <path>                Path to ULTRAKILL.exe or its folder");
+        Console.WriteLine("  --players <1-4>              Total number of local instances");
+        Console.WriteLine("  --layout <layout>            auto, vertical, horizontal or grid");
+        Console.WriteLine("  --aspect-mode <mode>         fit (16:9) or stretch/fill");
+        Console.WriteLine("  --monitor <1-N>              Monitor number, where 1 is primary");
+        Console.WriteLine("  --controller-profile <type>  auto, xbox, playstation or switch");
+        Console.WriteLine("  --attach-pid <pid>           Reuse an already-running solo ULTRAKILL as player 1");
+        Console.WriteLine("  --fill-screen                Fill every tile of the target monitor");
+        Console.WriteLine("  --dry-run                    Detect and validate without launching");
+        Console.WriteLine("  --help                       Show this help");
     }
 }

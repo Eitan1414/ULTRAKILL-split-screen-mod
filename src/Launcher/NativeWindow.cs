@@ -16,9 +16,61 @@ internal static class NativeWindow
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpFrameChanged = 0x0020;
     private const uint SwpShowWindow = 0x0040;
+    private const uint MonitorInfoPrimary = 0x00000001;
 
-    public static int ScreenWidth => GetSystemMetrics(0);
-    public static int ScreenHeight => GetSystemMetrics(1);
+    public static int ScreenWidth => GetPrimaryMonitor().Bounds.Width;
+    public static int ScreenHeight => GetPrimaryMonitor().Bounds.Height;
+
+    public static IReadOnlyList<MonitorDisplay> GetMonitors()
+    {
+        var monitors = new List<MonitorDisplay>();
+        MonitorEnumProc callback = (nint monitorHandle, nint deviceContext, ref NativeRect monitorRect, nint data) =>
+        {
+            var info = new MonitorInfoEx
+            {
+                Size = Marshal.SizeOf<MonitorInfoEx>(),
+                DeviceName = string.Empty
+            };
+
+            if (!GetMonitorInfo(monitorHandle, ref info))
+                return true;
+
+            WindowArea bounds = ToArea(info.Monitor);
+            WindowArea workArea = ToArea(info.Work);
+            bool primary = (info.Flags & MonitorInfoPrimary) != 0;
+            monitors.Add(new MonitorDisplay(0, bounds, workArea, primary, info.DeviceName ?? string.Empty));
+            return true;
+        };
+
+        _ = EnumDisplayMonitors(nint.Zero, nint.Zero, callback, nint.Zero);
+
+        if (monitors.Count == 0)
+        {
+            WindowArea fallback = new(0, 0, GetSystemMetrics(0), GetSystemMetrics(1));
+            return [new MonitorDisplay(0, fallback, fallback, true, "Primary")];
+        }
+
+        MonitorDisplay[] ordered = monitors
+            .OrderByDescending(monitor => monitor.IsPrimary)
+            .ThenBy(monitor => monitor.Bounds.X)
+            .ThenBy(monitor => monitor.Bounds.Y)
+            .Select((monitor, index) => monitor with { Index = index })
+            .ToArray();
+        return ordered;
+    }
+
+    public static MonitorDisplay GetMonitor(int requestedIndex, out bool fellBack)
+    {
+        IReadOnlyList<MonitorDisplay> monitors = GetMonitors();
+        if (requestedIndex >= 0 && requestedIndex < monitors.Count)
+        {
+            fellBack = false;
+            return monitors[requestedIndex];
+        }
+
+        fellBack = requestedIndex != 0;
+        return monitors[0];
+    }
 
     public static async Task<nint> WaitForMainWindowAsync(Process process, int timeoutMs)
     {
@@ -64,6 +116,22 @@ internal static class NativeWindow
             throw new InvalidOperationException($"SetWindowPos failed with Win32 error {Marshal.GetLastWin32Error()}.");
     }
 
+    private static MonitorDisplay GetPrimaryMonitor()
+    {
+        IReadOnlyList<MonitorDisplay> monitors = GetMonitors();
+        foreach (MonitorDisplay monitor in monitors)
+        {
+            if (monitor.IsPrimary)
+                return monitor;
+        }
+        return monitors[0];
+    }
+
+    private static WindowArea ToArea(NativeRect rect)
+    {
+        return new WindowArea(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+    }
+
     private static nint GetWindowStyle(nint window)
     {
         return nint.Size == 8
@@ -79,8 +147,43 @@ internal static class NativeWindow
             _ = SetWindowLong32(window, GwlStyle, style.ToInt32());
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MonitorInfoEx
+    {
+        public int Size;
+        public NativeRect Monitor;
+        public NativeRect Work;
+        public uint Flags;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string DeviceName;
+    }
+
+    private delegate bool MonitorEnumProc(nint monitor, nint deviceContext, ref NativeRect rect, nint data);
+
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumDisplayMonitors(
+        nint deviceContext,
+        nint clipRect,
+        MonitorEnumProc callback,
+        nint data);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(nint monitor, ref MonitorInfoEx info);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -105,3 +208,10 @@ internal static class NativeWindow
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", SetLastError = true)]
     private static extern nint SetWindowLongPtr64(nint window, int index, nint value);
 }
+
+internal readonly record struct MonitorDisplay(
+    int Index,
+    WindowArea Bounds,
+    WindowArea WorkArea,
+    bool IsPrimary,
+    string DeviceName);

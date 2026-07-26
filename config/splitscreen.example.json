@@ -4,11 +4,13 @@
   "layout": "auto",
   "aspectMode": "fit",
   "targetAspectRatio": "16:9",
+  "targetMonitor": 0,
   "windowGapPixels": 4,
   "launchDelayMs": 2500,
   "windowReadyTimeoutMs": 30000,
   "borderless": true,
   "controllerIsolation": true,
+  "controllerProfile": "auto",
   "controllerAssignments": [0, 1, 2, 3],
   "mutedPlayers": [],
   "jaket": {
