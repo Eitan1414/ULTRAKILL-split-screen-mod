@@ -6,13 +6,15 @@ internal static class LayoutEngine
 {
     public static PlayerWindow[] Create(LauncherConfig config)
     {
-        int screenWidth = NativeWindow.ScreenWidth;
-        int screenHeight = NativeWindow.ScreenHeight;
+        MonitorDisplay monitor = NativeWindow.GetMonitor(config.TargetMonitor, out _);
+        return Create(config, monitor.Bounds);
+    }
 
-        if (screenWidth <= 0 || screenHeight <= 0)
-            throw new InvalidOperationException("Windows returned an invalid primary-screen resolution.");
+    public static PlayerWindow[] Create(LauncherConfig config, WindowArea screen)
+    {
+        if (screen.Width <= 0 || screen.Height <= 0)
+            throw new InvalidOperationException("Windows returned an invalid target-monitor resolution.");
 
-        WindowArea screen = new(0, 0, screenWidth, screenHeight);
         WindowArea[] tiles = CreateTiles(screen, config.Players, ResolveLayout(config.Layout, config.Players));
         double aspectRatio = TryParseAspectRatio(config.TargetAspectRatio, out double parsed) ? parsed : 16d / 9d;
 
