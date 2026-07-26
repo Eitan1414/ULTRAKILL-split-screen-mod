@@ -146,7 +146,7 @@ internal static class JaketBridge
         object? lobbyValue;
         try
         {
-            lobbyValue = Activator.CreateInstance(lobbyType, code);
+            lobbyValue = Activator.CreateInstance(lobbyType, [code]);
         }
         catch (Exception exception)
         {
