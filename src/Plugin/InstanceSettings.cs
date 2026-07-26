@@ -2,10 +2,10 @@ namespace ULTRAKILLSplitScreen.Plugin;
 
 internal sealed class InstanceSettings
 {
-    public int PlayerIndex { get; private init; } = 1;
-    public int Width { get; private init; } = 960;
-    public int Height { get; private init; } = 1080;
-    public bool Muted { get; private init; }
+    public int PlayerIndex { get; private set; } = 1;
+    public int Width { get; private set; } = 960;
+    public int Height { get; private set; } = 1080;
+    public bool Muted { get; private set; }
 
     public static InstanceSettings FromEnvironment()
     {
