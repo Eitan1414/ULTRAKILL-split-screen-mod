@@ -5,9 +5,75 @@ namespace ULTRAKILLSplitScreen.Plugin;
 
 internal static class GamepadIsolation
 {
-    public static bool TryApply(int assignedIndex, out string message)
+    public static bool TryApply(int assignedOrdinal, string profile, out string message)
     {
         message = string.Empty;
+        if (!TryGetInputSystem(out Type? inputSystemType, out Type? gamepadType, out List<object> allGamepads, out message))
+            return false;
+
+        if (assignedOrdinal < 0)
+        {
+            message = $"Gamepad isolation disabled for this instance; detected {Describe(allGamepads)}.";
+            return true;
+        }
+
+        string normalizedProfile = NormalizeProfile(profile);
+        List<object> matchingGamepads = allGamepads
+            .Where(gamepad => MatchesProfile(GetDeviceName(gamepad), normalizedProfile))
+            .ToList();
+
+        if (matchingGamepads.Count == 0)
+        {
+            message = $"No {normalizedProfile} gamepad matched. Detected: {Describe(allGamepads)}.";
+            return false;
+        }
+
+        if (assignedOrdinal >= matchingGamepads.Count)
+        {
+            message = $"Requested {normalizedProfile} gamepad ordinal #{assignedOrdinal}, but only {matchingGamepads.Count} matched: {Describe(matchingGamepads)}.";
+            return false;
+        }
+
+        MethodInfo? disableMethod = FindDeviceMethod(inputSystemType!, "DisableDevice");
+        MethodInfo? enableMethod = FindDeviceMethod(inputSystemType!, "EnableDevice");
+        if (disableMethod is null)
+        {
+            message = "Unity Input System DisableDevice method was not found.";
+            return false;
+        }
+
+        object selected = matchingGamepads[assignedOrdinal];
+        if (enableMethod is not null)
+            InvokeDeviceMethod(enableMethod, selected);
+
+        foreach (object gamepad in allGamepads)
+        {
+            if (!ReferenceEquals(gamepad, selected))
+                InvokeDeviceMethod(disableMethod, gamepad);
+        }
+
+        message = $"Assigned {normalizedProfile} gamepad ordinal #{assignedOrdinal} ({GetDeviceName(selected)}); disabled {allGamepads.Count - 1} other gamepad(s).";
+        return true;
+    }
+
+    public static string DescribeAvailable()
+    {
+        return TryGetInputSystem(out _, out _, out List<object> gamepads, out string message)
+            ? Describe(gamepads)
+            : message;
+    }
+
+    private static bool TryGetInputSystem(
+        out Type? inputSystemType,
+        out Type? gamepadType,
+        out List<object> gamepads,
+        out string message)
+    {
+        inputSystemType = null;
+        gamepadType = null;
+        gamepads = [];
+        message = string.Empty;
+
         Assembly? inputAssembly = AppDomain.CurrentDomain.GetAssemblies()
             .FirstOrDefault(assembly => string.Equals(assembly.GetName().Name, "Unity.InputSystem", StringComparison.Ordinal));
         if (inputAssembly is null)
@@ -16,8 +82,8 @@ internal static class GamepadIsolation
             return false;
         }
 
-        Type? inputSystemType = inputAssembly.GetType("UnityEngine.InputSystem.InputSystem", false);
-        Type? gamepadType = inputAssembly.GetType("UnityEngine.InputSystem.Gamepad", false);
+        inputSystemType = inputAssembly.GetType("UnityEngine.InputSystem.InputSystem", false);
+        gamepadType = inputAssembly.GetType("UnityEngine.InputSystem.Gamepad", false);
         if (inputSystemType is null || gamepadType is null)
         {
             message = "Unity Input System gamepad types were not found.";
@@ -32,7 +98,6 @@ internal static class GamepadIsolation
             return false;
         }
 
-        var gamepads = new List<object>();
         foreach (object? device in devices)
         {
             if (device is not null && gamepadType.IsInstanceOfType(device))
@@ -45,38 +110,45 @@ internal static class GamepadIsolation
             return false;
         }
 
-        if (assignedIndex < 0)
-        {
-            message = $"Gamepad isolation disabled for this instance; detected {Describe(gamepads)}.";
-            return true;
-        }
-
-        if (assignedIndex >= gamepads.Count)
-        {
-            message = $"Requested gamepad #{assignedIndex}, but only {gamepads.Count} gamepad(s) were detected: {Describe(gamepads)}.";
-            return false;
-        }
-
-        MethodInfo? disableMethod = FindDeviceMethod(inputSystemType, "DisableDevice");
-        MethodInfo? enableMethod = FindDeviceMethod(inputSystemType, "EnableDevice");
-        if (disableMethod is null)
-        {
-            message = "Unity Input System DisableDevice method was not found.";
-            return false;
-        }
-
-        object selected = gamepads[assignedIndex];
-        if (enableMethod is not null)
-            InvokeDeviceMethod(enableMethod, selected);
-
-        for (int index = 0; index < gamepads.Count; index++)
-        {
-            if (index != assignedIndex)
-                InvokeDeviceMethod(disableMethod, gamepads[index]);
-        }
-
-        message = $"Assigned gamepad #{assignedIndex} ({GetDeviceName(selected)}); disabled {gamepads.Count - 1} other gamepad(s).";
         return true;
+    }
+
+    private static bool MatchesProfile(string deviceName, string profile)
+    {
+        if (profile == "auto")
+            return true;
+
+        string name = deviceName.ToLowerInvariant();
+        return profile switch
+        {
+            "xbox" => name.Contains("xbox", StringComparison.Ordinal)
+                || name.Contains("xinput", StringComparison.Ordinal)
+                || name.Contains("x-box", StringComparison.Ordinal),
+            "playstation" => name.Contains("dualshock", StringComparison.Ordinal)
+                || name.Contains("dualsense", StringComparison.Ordinal)
+                || name.Contains("playstation", StringComparison.Ordinal)
+                || name.Contains("wireless controller", StringComparison.Ordinal)
+                || name.Contains("sony", StringComparison.Ordinal),
+            "switch" => name.Contains("switch", StringComparison.Ordinal)
+                || name.Contains("nintendo", StringComparison.Ordinal)
+                || name.Contains("pro controller", StringComparison.Ordinal)
+                || name.Contains("joy-con", StringComparison.Ordinal),
+            _ => true
+        };
+    }
+
+    private static string NormalizeProfile(string? profile)
+    {
+        return profile?.Trim().ToLowerInvariant() switch
+        {
+            "xbox" => "xbox",
+            "playstation" => "playstation",
+            "ps4" => "playstation",
+            "ps5" => "playstation",
+            "switch" => "switch",
+            "nintendo" => "switch",
+            _ => "auto"
+        };
     }
 
     private static MethodInfo? FindDeviceMethod(Type inputSystemType, string name)
