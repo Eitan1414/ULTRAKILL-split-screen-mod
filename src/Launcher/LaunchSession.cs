@@ -6,50 +6,63 @@ internal sealed class LaunchSession
 {
     private readonly LauncherConfig _config;
     private readonly string _gameExecutable;
+    private readonly string _lobbyCodePath;
 
     public LaunchSession(LauncherConfig config, string gameExecutable)
     {
         _config = config;
         _gameExecutable = gameExecutable;
+        _lobbyCodePath = ResolveLobbyCodePath(config.Jaket.LobbyCodeFile);
     }
 
     public async Task RunAsync()
     {
-        WindowArea[] areas = CreateAreas(_config.Layout);
+        PlayerWindow[] windows = LayoutEngine.Create(_config);
+        ValidateJaketInstallation();
+        PrepareLobbyCodeFile();
 
         Console.WriteLine($"Screen: {NativeWindow.ScreenWidth}x{NativeWindow.ScreenHeight}");
-        Console.WriteLine($"Layout: {_config.Layout}");
-        Console.WriteLine("Launching player 1...");
+        Console.WriteLine($"Players: {_config.Players}");
+        Console.WriteLine($"Layout: {_config.Layout}, aspect: {_config.AspectMode} {_config.TargetAspectRatio}");
 
-        Process playerOne = StartPlayer(1, areas[0], _config.PlayerOneMuted);
-        nint playerOneWindow = await NativeWindow.WaitForMainWindowAsync(playerOne, _config.WindowReadyTimeoutMs);
-        NativeWindow.ApplyLayout(playerOneWindow, areas[0], _config.Borderless);
+        var instances = new List<RunningInstance>(_config.Players);
+        foreach (PlayerWindow playerWindow in windows)
+        {
+            Console.WriteLine($"Launching player {playerWindow.PlayerIndex} with gamepad #{_config.ControllerFor(playerWindow.PlayerIndex)}...");
+            Process process = StartPlayer(playerWindow);
+            nint handle = await NativeWindow.WaitForMainWindowAsync(process, _config.WindowReadyTimeoutMs);
+            NativeWindow.ApplyLayout(handle, playerWindow.Content, _config.Borderless);
+            instances.Add(new RunningInstance(process, handle, playerWindow.Content));
 
-        if (_config.LaunchDelayMs > 0)
-            await Task.Delay(_config.LaunchDelayMs).ConfigureAwait(false);
+            if (playerWindow.PlayerIndex < _config.Players && _config.LaunchDelayMs > 0)
+                await Task.Delay(_config.LaunchDelayMs).ConfigureAwait(false);
+        }
 
-        Console.WriteLine("Launching player 2...");
-        Process playerTwo = StartPlayer(2, areas[1], _config.PlayerTwoMuted);
-        nint playerTwoWindow = await NativeWindow.WaitForMainWindowAsync(playerTwo, _config.WindowReadyTimeoutMs);
-        NativeWindow.ApplyLayout(playerTwoWindow, areas[1], _config.Borderless);
-
-        // Unity can recreate or resize its window during startup. Reapply the layout a few times.
-        for (int attempt = 0; attempt < 4; attempt++)
+        // Unity can recreate or resize windows while loading. Reapply all placements several times.
+        for (int attempt = 0; attempt < 6; attempt++)
         {
             await Task.Delay(1000).ConfigureAwait(false);
-            if (!playerOne.HasExited)
-                NativeWindow.ApplyLayout(playerOneWindow, areas[0], _config.Borderless);
-            if (!playerTwo.HasExited)
-                NativeWindow.ApplyLayout(playerTwoWindow, areas[1], _config.Borderless);
+            foreach (RunningInstance instance in instances)
+            {
+                if (!instance.Process.HasExited)
+                    NativeWindow.ApplyLayout(instance.Handle, instance.Area, _config.Borderless);
+            }
         }
 
         Console.WriteLine();
-        Console.WriteLine("Both ULTRAKILL instances are running.");
-        Console.WriteLine("Version 0.1 does not yet isolate controllers or join a Jaket lobby automatically.");
+        Console.WriteLine($"{instances.Count} ULTRAKILL instances are running.");
+        Console.WriteLine(_config.ControllerIsolation
+            ? "Unity Input System controller isolation is enabled."
+            : "Controller isolation is disabled; every instance may see every controller.");
+        Console.WriteLine(_config.Jaket.Enabled && _config.Jaket.AutoHostJoin
+            ? "Jaket auto host/join is enabled. Check BepInEx logs for the lobby result."
+            : "Jaket auto host/join is disabled.");
     }
 
-    private Process StartPlayer(int playerIndex, WindowArea area, bool muted)
+    private Process StartPlayer(PlayerWindow playerWindow)
     {
+        int playerIndex = playerWindow.PlayerIndex;
+        WindowArea area = playerWindow.Content;
         string workingDirectory = Path.GetDirectoryName(_gameExecutable)
             ?? throw new InvalidOperationException("The game executable has no parent directory.");
 
@@ -71,40 +84,59 @@ internal sealed class LaunchSession
         };
 
         startInfo.Environment["UKSS_PLAYER_INDEX"] = playerIndex.ToString();
+        startInfo.Environment["UKSS_PLAYER_COUNT"] = _config.Players.ToString();
         startInfo.Environment["UKSS_WINDOW_X"] = area.X.ToString();
         startInfo.Environment["UKSS_WINDOW_Y"] = area.Y.ToString();
         startInfo.Environment["UKSS_WINDOW_WIDTH"] = area.Width.ToString();
         startInfo.Environment["UKSS_WINDOW_HEIGHT"] = area.Height.ToString();
         startInfo.Environment["UKSS_LAYOUT"] = _config.Layout;
-        startInfo.Environment["UKSS_MUTED"] = muted ? "1" : "0";
+        startInfo.Environment["UKSS_MUTED"] = _config.IsMuted(playerIndex) ? "1" : "0";
+        startInfo.Environment["UKSS_INPUT_ISOLATION"] = _config.ControllerIsolation ? "1" : "0";
+        startInfo.Environment["UKSS_GAMEPAD_INDEX"] = _config.ControllerFor(playerIndex).ToString();
+        startInfo.Environment["UKSS_JAKET_ENABLED"] = _config.Jaket.Enabled && _config.Jaket.AutoHostJoin ? "1" : "0";
+        startInfo.Environment["UKSS_JAKET_HOST"] = playerIndex == _config.Jaket.HostPlayer ? "1" : "0";
+        startInfo.Environment["UKSS_JAKET_CODE_FILE"] = _lobbyCodePath;
+        startInfo.Environment["UKSS_JAKET_START_DELAY"] = _config.Jaket.StartDelaySeconds.ToString();
+        startInfo.Environment["UKSS_JAKET_TIMEOUT"] = _config.Jaket.TimeoutSeconds.ToString();
 
         return Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Unable to launch ULTRAKILL for player {playerIndex}.");
     }
 
-    private static WindowArea[] CreateAreas(string layout)
+    private void ValidateJaketInstallation()
     {
-        int screenWidth = NativeWindow.ScreenWidth;
-        int screenHeight = NativeWindow.ScreenHeight;
+        if (!_config.Jaket.Enabled)
+            return;
 
-        if (screenWidth <= 0 || screenHeight <= 0)
-            throw new InvalidOperationException("Windows returned an invalid primary-screen resolution.");
+        string gameDirectory = Path.GetDirectoryName(_gameExecutable) ?? string.Empty;
+        string pluginDirectory = Path.Combine(gameDirectory, "BepInEx", "plugins");
+        bool found = Directory.Exists(pluginDirectory)
+            && Directory.EnumerateFiles(pluginDirectory, "Jaket.dll", SearchOption.AllDirectories).Any();
 
-        if (string.Equals(layout, "horizontal", StringComparison.OrdinalIgnoreCase))
-        {
-            int topHeight = screenHeight / 2;
-            return
-            [
-                new WindowArea(0, 0, screenWidth, topHeight),
-                new WindowArea(0, topHeight, screenWidth, screenHeight - topHeight)
-            ];
-        }
-
-        int leftWidth = screenWidth / 2;
-        return
-        [
-            new WindowArea(0, 0, leftWidth, screenHeight),
-            new WindowArea(leftWidth, 0, screenWidth - leftWidth, screenHeight)
-        ];
+        if (!found)
+            Console.WriteLine("WARNING: Jaket.dll was not found under BepInEx/plugins. Automatic co-op will be skipped by the plugin.");
     }
+
+    private void PrepareLobbyCodeFile()
+    {
+        if (!_config.Jaket.Enabled || !_config.Jaket.AutoHostJoin)
+            return;
+
+        string? directory = Path.GetDirectoryName(_lobbyCodePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+
+        if (File.Exists(_lobbyCodePath))
+            File.Delete(_lobbyCodePath);
+    }
+
+    private static string ResolveLobbyCodePath(string configuredPath)
+    {
+        string expanded = Environment.ExpandEnvironmentVariables(configuredPath);
+        return Path.IsPathRooted(expanded)
+            ? Path.GetFullPath(expanded)
+            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, expanded));
+    }
+
+    private sealed record RunningInstance(Process Process, nint Handle, WindowArea Area);
 }
