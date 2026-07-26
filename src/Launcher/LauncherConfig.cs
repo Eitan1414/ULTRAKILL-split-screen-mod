@@ -110,9 +110,11 @@ internal sealed class LauncherConfig
         if (ControllerAssignments.Length < Players)
         {
             int originalLength = ControllerAssignments.Length;
-            Array.Resize(ref ControllerAssignments, Players);
+            int[] resizedAssignments = ControllerAssignments;
+            Array.Resize(ref resizedAssignments, Players);
             for (int index = originalLength; index < Players; index++)
-                ControllerAssignments[index] = index;
+                resizedAssignments[index] = index;
+            ControllerAssignments = resizedAssignments;
         }
 
         MutedPlayers ??= [];
