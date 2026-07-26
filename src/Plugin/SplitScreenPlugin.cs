@@ -12,13 +12,14 @@ public sealed class SplitScreenPlugin : BaseUnityPlugin
 {
     private const string PluginGuid = "eitan1414.ultrakill.splitscreen";
     private const string PluginName = "ULTRAKILL Split-Screen Bridge";
-    private const string PluginVersion = "0.3.0";
+    private const string PluginVersion = "0.3.1";
 
     private InstanceSettings _settings = null!;
     private HotkeySplitScreenMenu _menu = null!;
     private bool _isolationStarted;
     private bool _jaketStarted;
     private bool _cameraAspectStarted;
+    private bool _hotkeyLaunchInProgress;
 
     private void Awake()
     {
@@ -29,7 +30,7 @@ public sealed class SplitScreenPlugin : BaseUnityPlugin
         if (_settings.Muted)
             AudioListener.volume = 0f;
 
-        Logger.LogInfo($"Loaded split-screen bridge for player {_settings.PlayerIndex}/{_settings.PlayerCount}.");
+        Logger.LogInfo($"Loaded split-screen bridge v{PluginVersion} for player {_settings.PlayerIndex}/{_settings.PlayerCount}.");
         Logger.LogInfo("While playing solo, press Ctrl+P to open the split-screen popup.");
 
         if (_settings.ManagedWindow)
@@ -47,7 +48,7 @@ public sealed class SplitScreenPlugin : BaseUnityPlugin
 
     private void Update()
     {
-        if (_settings.PlayerCount != 1)
+        if (_settings.PlayerCount != 1 || _hotkeyLaunchInProgress)
             return;
 
         bool control = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
@@ -68,33 +69,65 @@ public sealed class SplitScreenPlugin : BaseUnityPlugin
 
     private string? StartHotkeySession(HotkeyLaunchRequest request)
     {
+        if (_hotkeyLaunchInProgress)
+            return "Un démarrage du split-screen est déjà en cours.";
+
+        string? launcherPath = FindLauncher();
+        if (launcherPath is null)
+        {
+            return "ULTRAKILLSplitScreen.Launcher.exe est introuvable. Extrais tout le ZIP directement dans le dossier d’ULTRAKILL.";
+        }
+
         try
         {
-            string? launcherPath = FindLauncher();
-            if (launcherPath is null)
-            {
-                return "ULTRAKILLSplitScreen.Launcher.exe est introuvable. Extrais tout le ZIP v0.3 directement dans le dossier d’ULTRAKILL.";
-            }
-
-            string lobbyCodePath = Path.Combine(Paths.GameRootPath, "jaket-lobby-code.txt");
-            if (File.Exists(lobbyCodePath))
-                File.Delete(lobbyCodePath);
-
-            _settings.ConfigureHotkeySession(request.TotalPlayers, request.ControllerProfile, lobbyCodePath);
-            StartGamepadIsolation();
-            StartCameraAspectCorrection();
-            StartJaketAutomation();
-
             int currentProcessId = Process.GetCurrentProcess().Id;
-            string arguments = string.Join(" ", new[]
-            {
-                $"--attach-pid {currentProcessId}",
-                $"--players {request.TotalPlayers}",
-                $"--controller-profile {request.ControllerProfile}",
-                $"--monitor {request.TargetMonitor + 1}",
-                request.FillScreen ? "--fill-screen" : string.Empty
-            }.Where(argument => !string.IsNullOrWhiteSpace(argument)));
+            string lobbyCodePath = Path.Combine(Paths.GameRootPath, "jaket-lobby-code.txt");
+            string readyFilePath = Path.Combine(Paths.GameRootPath, $"ukss-ready-{currentProcessId}.flag");
+            SafeDelete(lobbyCodePath);
+            SafeDelete(readyFilePath);
 
+            _hotkeyLaunchInProgress = true;
+            StartCoroutine(BeginHotkeySession(
+                request,
+                launcherPath,
+                lobbyCodePath,
+                readyFilePath,
+                currentProcessId));
+            return null;
+        }
+        catch (Exception exception)
+        {
+            _hotkeyLaunchInProgress = false;
+            Logger.LogError(exception);
+            return $"Impossible de préparer le split-screen : {exception.Message}";
+        }
+    }
+
+    private IEnumerator BeginHotkeySession(
+        HotkeyLaunchRequest request,
+        string launcherPath,
+        string lobbyCodePath,
+        string readyFilePath,
+        int currentProcessId)
+    {
+        // Moving an exclusive-fullscreen Unity window through Win32 can be unstable.
+        // Switch the current solo process to a normal window before the launcher attaches to it.
+        Screen.fullScreenMode = FullScreenMode.Windowed;
+        yield return null;
+        yield return new WaitForSecondsRealtime(0.75f);
+
+        string arguments = string.Join(" ", new[]
+        {
+            $"--attach-pid {currentProcessId}",
+            $"--players {request.TotalPlayers}",
+            $"--controller-profile {request.ControllerProfile}",
+            $"--monitor {request.TargetMonitor + 1}",
+            $"--ready-file {Quote(readyFilePath)}",
+            request.FillScreen ? "--fill-screen" : string.Empty
+        }.Where(argument => !string.IsNullOrWhiteSpace(argument)));
+
+        try
+        {
             var startInfo = new ProcessStartInfo
             {
                 FileName = launcherPath,
@@ -104,14 +137,56 @@ public sealed class SplitScreenPlugin : BaseUnityPlugin
             };
 
             Process.Start(startInfo);
-            Logger.LogInfo($"Ctrl+P requested {_settings.PlayerCount}-player split-screen on monitor #{request.TargetMonitor + 1}.");
-            return null;
+            Logger.LogInfo($"Ctrl+P requested {request.TotalPlayers}-player split-screen on monitor #{request.TargetMonitor + 1}.");
         }
         catch (Exception exception)
         {
-            Logger.LogError(exception);
-            return $"Impossible d’activer le split-screen : {exception.Message}";
+            _hotkeyLaunchInProgress = false;
+            Logger.LogError($"Could not start the split-screen launcher: {exception}");
+            yield break;
         }
+
+        float deadline = Time.realtimeSinceStartup + 90f;
+        string result = string.Empty;
+        while (Time.realtimeSinceStartup < deadline)
+        {
+            try
+            {
+                if (File.Exists(readyFilePath))
+                {
+                    result = File.ReadAllText(readyFilePath).Trim();
+                    if (!string.IsNullOrWhiteSpace(result))
+                        break;
+                }
+            }
+            catch (IOException)
+            {
+                // The launcher may still be replacing the handshake file.
+            }
+
+            yield return new WaitForSecondsRealtime(0.25f);
+        }
+
+        SafeDelete(readyFilePath);
+
+        if (!string.Equals(result, "OK", StringComparison.OrdinalIgnoreCase))
+        {
+            _hotkeyLaunchInProgress = false;
+            string reason = result.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase)
+                ? result.Substring("ERROR:".Length)
+                : "le launcher n’a pas confirmé le démarrage dans les 90 secondes";
+            Logger.LogError($"Split-screen startup cancelled: {reason}");
+            yield break;
+        }
+
+        // Only touch the current player after all additional game windows successfully exist.
+        _settings.ConfigureHotkeySession(request.TotalPlayers, request.ControllerProfile, lobbyCodePath);
+        StartGamepadIsolation();
+        StartCameraAspectCorrection();
+        StartJaketAutomation();
+        _hotkeyLaunchInProgress = false;
+
+        Logger.LogInfo("Additional players are ready; enabled player-1 mapping and Jaket automation.");
     }
 
     private string? FindLauncher()
@@ -211,4 +286,23 @@ public sealed class SplitScreenPlugin : BaseUnityPlugin
             yield return new WaitForSecondsRealtime(success ? 5f : 1f);
         }
     }
+
+    private static void SafeDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (IOException)
+        {
+            // A stale file must not crash the running solo game.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // The launcher will report a clearer error if it cannot write the file later.
+        }
+    }
+
+    private static string Quote(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
 }
