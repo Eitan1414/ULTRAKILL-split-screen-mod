@@ -27,6 +27,9 @@ internal sealed class LauncherConfig
     [JsonPropertyName("targetAspectRatio")]
     public string TargetAspectRatio { get; set; } = "16:9";
 
+    [JsonPropertyName("targetMonitor")]
+    public int TargetMonitor { get; set; }
+
     [JsonPropertyName("windowGapPixels")]
     public int WindowGapPixels { get; set; } = 4;
 
@@ -41,6 +44,9 @@ internal sealed class LauncherConfig
 
     [JsonPropertyName("controllerIsolation")]
     public bool ControllerIsolation { get; set; } = true;
+
+    [JsonPropertyName("controllerProfile")]
+    public string ControllerProfile { get; set; } = "auto";
 
     [JsonPropertyName("controllerAssignments")]
     public int[] ControllerAssignments { get; set; } = [0, 1, 2, 3];
@@ -96,12 +102,25 @@ internal sealed class LauncherConfig
         };
 
         AspectMode = string.Equals(AspectMode, "stretch", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(AspectMode, "fill", StringComparison.OrdinalIgnoreCase)
             ? "stretch"
             : "fit";
+
+        ControllerProfile = ControllerProfile.Trim().ToLowerInvariant() switch
+        {
+            "xbox" => "xbox",
+            "playstation" => "playstation",
+            "ps4" => "playstation",
+            "ps5" => "playstation",
+            "switch" => "switch",
+            "nintendo" => "switch",
+            _ => "auto"
+        };
 
         if (!LayoutEngine.TryParseAspectRatio(TargetAspectRatio, out _))
             TargetAspectRatio = "16:9";
 
+        TargetMonitor = Math.Clamp(TargetMonitor, 0, 15);
         WindowGapPixels = Math.Clamp(WindowGapPixels, 0, 64);
         LaunchDelayMs = Math.Clamp(LaunchDelayMs, 0, 60000);
         WindowReadyTimeoutMs = Math.Clamp(WindowReadyTimeoutMs, 5000, 120000);
