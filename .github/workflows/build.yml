@@ -1,0 +1,73 @@
+name: Build ULTRAKILL Split-Screen
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build Windows x64 package
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore ULTRAKILLSplitScreen.sln
+
+      - name: Build solution
+        run: dotnet build ULTRAKILLSplitScreen.sln --configuration Release --no-restore
+
+      - name: Publish self-contained launcher
+        run: >-
+          dotnet publish src/Launcher/ULTRAKILLSplitScreen.Launcher.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --no-restore
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          --output dist/launcher
+
+      - name: Build BepInEx plugin
+        run: >-
+          dotnet build src/Plugin/ULTRAKILLSplitScreen.Plugin.csproj
+          --configuration Release
+          --no-restore
+          --output dist/plugin
+
+      - name: Assemble installable package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = 'dist/package'
+          $pluginDirectory = Join-Path $package 'BepInEx/plugins/ULTRAKILLSplitScreen'
+
+          New-Item -ItemType Directory -Force -Path $pluginDirectory | Out-Null
+          Copy-Item 'dist/launcher/ULTRAKILLSplitScreen.Launcher.exe' $package
+          Copy-Item 'dist/plugin/ULTRAKILLSplitScreen.Plugin.dll' $pluginDirectory
+          Copy-Item 'config/splitscreen.example.json' (Join-Path $package 'splitscreen.json')
+          Copy-Item 'README.md' $package
+
+          Compress-Archive -Path "$package/*" -DestinationPath 'dist/ULTRAKILL-SplitScreen-v0.1.0-win-x64.zip' -CompressionLevel Optimal
+
+      - name: Upload compiled package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ULTRAKILL-SplitScreen-v0.1.0-win-x64
+          path: dist/ULTRAKILL-SplitScreen-v0.1.0-win-x64.zip
+          if-no-files-found: error
+          retention-days: 30
