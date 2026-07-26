@@ -7,28 +7,52 @@ internal sealed class LaunchSession
     private readonly LauncherConfig _config;
     private readonly string _gameExecutable;
     private readonly string _lobbyCodePath;
+    private readonly int? _attachedProcessId;
 
-    public LaunchSession(LauncherConfig config, string gameExecutable)
+    public LaunchSession(LauncherConfig config, string gameExecutable, int? attachedProcessId = null)
     {
         _config = config;
         _gameExecutable = gameExecutable;
+        _attachedProcessId = attachedProcessId;
         _lobbyCodePath = ResolveLobbyCodePath(config.Jaket.LobbyCodeFile);
     }
 
     public async Task RunAsync()
     {
-        PlayerWindow[] windows = LayoutEngine.Create(_config);
+        MonitorDisplay monitor = NativeWindow.GetMonitor(_config.TargetMonitor, out bool monitorFallback);
+        PlayerWindow[] windows = LayoutEngine.Create(_config, monitor.Bounds);
         ValidateJaketInstallation();
-        PrepareLobbyCodeFile();
 
-        Console.WriteLine($"Screen: {NativeWindow.ScreenWidth}x{NativeWindow.ScreenHeight}");
+        if (_attachedProcessId is null)
+            PrepareLobbyCodeFile();
+
+        Console.WriteLine($"Target monitor: #{monitor.Index + 1} {monitor.DeviceName} ({monitor.Bounds.Width}x{monitor.Bounds.Height})");
+        if (monitorFallback)
+            Console.WriteLine($"WARNING: monitor #{_config.TargetMonitor + 1} was not found; using the primary monitor.");
         Console.WriteLine($"Players: {_config.Players}");
         Console.WriteLine($"Layout: {_config.Layout}, aspect: {_config.AspectMode} {_config.TargetAspectRatio}");
+        Console.WriteLine($"Controller profile: {_config.ControllerProfile}");
 
         var instances = new List<RunningInstance>(_config.Players);
-        foreach (PlayerWindow playerWindow in windows)
+        int firstPlayerToLaunch = 1;
+
+        if (_attachedProcessId is int processId)
         {
-            Console.WriteLine($"Launching player {playerWindow.PlayerIndex} with gamepad #{_config.ControllerFor(playerWindow.PlayerIndex)}...");
+            Process attached = Process.GetProcessById(processId);
+            if (attached.HasExited)
+                throw new InvalidOperationException($"The attached ULTRAKILL process {processId} has already exited.");
+
+            PlayerWindow playerOneWindow = windows[0];
+            nint attachedHandle = await NativeWindow.WaitForMainWindowAsync(attached, _config.WindowReadyTimeoutMs);
+            NativeWindow.ApplyLayout(attachedHandle, playerOneWindow.Content, _config.Borderless);
+            instances.Add(new RunningInstance(attached, attachedHandle, playerOneWindow.Content));
+            firstPlayerToLaunch = 2;
+            Console.WriteLine($"Attached the current solo process {processId} as player 1.");
+        }
+
+        foreach (PlayerWindow playerWindow in windows.Where(window => window.PlayerIndex >= firstPlayerToLaunch))
+        {
+            Console.WriteLine($"Launching player {playerWindow.PlayerIndex} with {_config.ControllerProfile} gamepad ordinal #{_config.ControllerFor(playerWindow.PlayerIndex)}...");
             Process process = StartPlayer(playerWindow);
             nint handle = await NativeWindow.WaitForMainWindowAsync(process, _config.WindowReadyTimeoutMs);
             NativeWindow.ApplyLayout(handle, playerWindow.Content, _config.Borderless);
@@ -39,7 +63,7 @@ internal sealed class LaunchSession
         }
 
         // Unity can recreate or resize windows while loading. Reapply all placements several times.
-        for (int attempt = 0; attempt < 6; attempt++)
+        for (int attempt = 0; attempt < 8; attempt++)
         {
             await Task.Delay(1000).ConfigureAwait(false);
             foreach (RunningInstance instance in instances)
@@ -50,7 +74,7 @@ internal sealed class LaunchSession
         }
 
         Console.WriteLine();
-        Console.WriteLine($"{instances.Count} ULTRAKILL instances are running.");
+        Console.WriteLine($"{instances.Count} ULTRAKILL instances are arranged on monitor #{monitor.Index + 1}.");
         Console.WriteLine(_config.ControllerIsolation
             ? "Unity Input System controller isolation is enabled."
             : "Controller isolation is disabled; every instance may see every controller.");
@@ -93,6 +117,7 @@ internal sealed class LaunchSession
         startInfo.Environment["UKSS_MUTED"] = _config.IsMuted(playerIndex) ? "1" : "0";
         startInfo.Environment["UKSS_INPUT_ISOLATION"] = _config.ControllerIsolation ? "1" : "0";
         startInfo.Environment["UKSS_GAMEPAD_INDEX"] = _config.ControllerFor(playerIndex).ToString();
+        startInfo.Environment["UKSS_GAMEPAD_PROFILE"] = _config.ControllerProfile;
         startInfo.Environment["UKSS_JAKET_ENABLED"] = _config.Jaket.Enabled && _config.Jaket.AutoHostJoin ? "1" : "0";
         startInfo.Environment["UKSS_JAKET_HOST"] = playerIndex == _config.Jaket.HostPlayer ? "1" : "0";
         startInfo.Environment["UKSS_JAKET_CODE_FILE"] = _lobbyCodePath;
