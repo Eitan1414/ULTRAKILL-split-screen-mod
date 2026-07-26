@@ -4,8 +4,8 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <AssemblyName>ULTRAKILLSplitScreen.Launcher</AssemblyName>
     <RootNamespace>ULTRAKILLSplitScreen.Launcher</RootNamespace>
-    <Version>0.2.0</Version>
-    <Description>One-to-four-player split-screen launcher for ULTRAKILL with controller isolation and Jaket automation.</Description>
+    <Version>0.3.0</Version>
+    <Description>One-to-four-instance split-screen launcher for ULTRAKILL with in-game hotkey and multi-monitor support.</Description>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
 </Project>
