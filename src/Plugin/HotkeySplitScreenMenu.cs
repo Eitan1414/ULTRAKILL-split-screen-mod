@@ -67,7 +67,7 @@ internal sealed class HotkeySplitScreenMenu
         _shown = false;
         Cursor.visible = _previousCursorVisible;
         Cursor.lockState = _previousCursorLock;
-        Time.timeScale = _previousTimeScale <= 0f ? 1f : _previousTimeScale;
+        Time.timeScale = _previousTimeScale;
     }
 
     private void DrawWindow(int windowId)
@@ -114,10 +114,10 @@ internal sealed class HotkeySplitScreenMenu
         if (GUILayout.Button("Activer le split-screen", GUILayout.Height(38f)))
         {
             var request = new HotkeyLaunchRequest(
-                TotalPlayers: _playerChoice + 2,
-                ControllerProfile: ProfileValue(_profileChoice),
-                TargetMonitor: _monitorChoice,
-                FillScreen: _fillScreen);
+                _playerChoice + 2,
+                ProfileValue(_profileChoice),
+                _monitorChoice,
+                _fillScreen);
 
             string? error = _launch(request);
             if (string.IsNullOrWhiteSpace(error))
@@ -140,8 +140,18 @@ internal sealed class HotkeySplitScreenMenu
     }
 }
 
-internal readonly record struct HotkeyLaunchRequest(
-    int TotalPlayers,
-    string ControllerProfile,
-    int TargetMonitor,
-    bool FillScreen);
+internal readonly struct HotkeyLaunchRequest
+{
+    public HotkeyLaunchRequest(int totalPlayers, string controllerProfile, int targetMonitor, bool fillScreen)
+    {
+        TotalPlayers = totalPlayers;
+        ControllerProfile = controllerProfile;
+        TargetMonitor = targetMonitor;
+        FillScreen = fillScreen;
+    }
+
+    public int TotalPlayers { get; }
+    public string ControllerProfile { get; }
+    public int TargetMonitor { get; }
+    public bool FillScreen { get; }
+}
