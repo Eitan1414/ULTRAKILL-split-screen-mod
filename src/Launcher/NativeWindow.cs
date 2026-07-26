@@ -24,7 +24,7 @@ internal static class NativeWindow
     public static IReadOnlyList<MonitorDisplay> GetMonitors()
     {
         var monitors = new List<MonitorDisplay>();
-        MonitorEnumProc callback = (monitorHandle, _, ref NativeRect _, _) =>
+        MonitorEnumProc callback = (nint monitorHandle, nint deviceContext, ref NativeRect monitorRect, nint data) =>
         {
             var info = new MonitorInfoEx
             {
@@ -118,9 +118,13 @@ internal static class NativeWindow
 
     private static MonitorDisplay GetPrimaryMonitor()
     {
-        return GetMonitors().FirstOrDefault(monitor => monitor.IsPrimary) is { } primary
-            ? primary
-            : GetMonitors()[0];
+        IReadOnlyList<MonitorDisplay> monitors = GetMonitors();
+        foreach (MonitorDisplay monitor in monitors)
+        {
+            if (monitor.IsPrimary)
+                return monitor;
+        }
+        return monitors[0];
     }
 
     private static WindowArea ToArea(NativeRect rect)
