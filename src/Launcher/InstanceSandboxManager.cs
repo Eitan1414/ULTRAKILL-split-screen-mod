@@ -101,19 +101,6 @@ internal sealed class InstanceSandboxManager
 
         string destination = Path.Combine(playerRoot, "BepInEx");
         CopyDirectory(source, destination);
-
-        string sharedLog = Path.Combine(destination, "LogOutput.log");
-        if (File.Exists(sharedLog))
-        {
-            try
-            {
-                File.Delete(sharedLog);
-            }
-            catch (IOException)
-            {
-                // The copied log is optional and will be recreated by the child process.
-            }
-        }
     }
 
     private static void CopyDirectory(string source, string destination)
@@ -123,16 +110,31 @@ internal sealed class InstanceSandboxManager
         foreach (string directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
         {
             string relative = Path.GetRelativePath(source, directory);
+            if (IsSkippedBepInExPath(relative))
+                continue;
             Directory.CreateDirectory(Path.Combine(destination, relative));
         }
 
         foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
             string relative = Path.GetRelativePath(source, file);
+            if (IsSkippedBepInExPath(relative)
+                || Path.GetFileName(file).EndsWith(".log", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             string target = Path.Combine(destination, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target, true);
         }
+    }
+
+    private static bool IsSkippedBepInExPath(string relativePath)
+    {
+        string normalized = relativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        return normalized.Equals("cache", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith($"cache{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void CreateDirectoryJunction(string source, string destination)
