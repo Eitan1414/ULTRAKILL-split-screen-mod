@@ -1,10 +1,23 @@
 {
   "gameExecutable": "",
-  "layout": "vertical",
-  "launchDelayMs": 3500,
+  "players": 2,
+  "layout": "auto",
+  "aspectMode": "fit",
+  "targetAspectRatio": "16:9",
+  "windowGapPixels": 4,
+  "launchDelayMs": 2500,
   "windowReadyTimeoutMs": 30000,
   "borderless": true,
-  "playerOneMuted": false,
-  "playerTwoMuted": false,
+  "controllerIsolation": true,
+  "controllerAssignments": [0, 1, 2, 3],
+  "mutedPlayers": [],
+  "jaket": {
+    "enabled": true,
+    "autoHostJoin": true,
+    "hostPlayer": 1,
+    "lobbyCodeFile": "jaket-lobby-code.txt",
+    "startDelaySeconds": 8,
+    "timeoutSeconds": 60
+  },
   "extraArguments": ""
 }
