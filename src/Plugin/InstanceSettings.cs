@@ -6,6 +6,7 @@ internal sealed class InstanceSettings
     public int PlayerCount { get; private set; } = 1;
     public int Width { get; private set; } = 960;
     public int Height { get; private set; } = 540;
+    public bool ManagedWindow { get; private set; }
     public bool Muted { get; private set; }
     public bool InputIsolation { get; private set; }
     public int GamepadIndex { get; private set; }
@@ -18,12 +19,14 @@ internal sealed class InstanceSettings
 
     public static InstanceSettings FromEnvironment()
     {
+        string? configuredWidth = Environment.GetEnvironmentVariable("UKSS_WINDOW_WIDTH");
         return new InstanceSettings
         {
             PlayerIndex = ReadInt("UKSS_PLAYER_INDEX", 1, 1, 4),
             PlayerCount = ReadInt("UKSS_PLAYER_COUNT", 1, 1, 4),
             Width = ReadInt("UKSS_WINDOW_WIDTH", 960, 320, 16384),
             Height = ReadInt("UKSS_WINDOW_HEIGHT", 540, 240, 16384),
+            ManagedWindow = !string.IsNullOrWhiteSpace(configuredWidth),
             Muted = ReadBool("UKSS_MUTED"),
             InputIsolation = ReadBool("UKSS_INPUT_ISOLATION"),
             GamepadIndex = ReadInt("UKSS_GAMEPAD_INDEX", 0, -1, 31),
@@ -42,6 +45,7 @@ internal sealed class InstanceSettings
         PlayerCount = Math.Clamp(playerCount, 2, 4);
         Width = Math.Max(320, UnityEngine.Screen.width);
         Height = Math.Max(240, UnityEngine.Screen.height);
+        ManagedWindow = false;
         InputIsolation = true;
         GamepadIndex = 0;
         GamepadProfile = NormalizeProfile(gamepadProfile);
