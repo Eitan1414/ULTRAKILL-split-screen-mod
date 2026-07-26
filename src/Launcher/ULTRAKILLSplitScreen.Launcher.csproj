@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>ULTRAKILLSplitScreen.Launcher</AssemblyName>
+    <RootNamespace>ULTRAKILLSplitScreen.Launcher</RootNamespace>
+    <Version>0.1.0</Version>
+    <Description>Two-instance split-screen launcher prototype for ULTRAKILL.</Description>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+</Project>
