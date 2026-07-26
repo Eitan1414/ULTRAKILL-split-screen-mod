@@ -53,7 +53,7 @@ internal sealed class LaunchSession
         string workingDirectory = Path.GetDirectoryName(_gameExecutable)
             ?? throw new InvalidOperationException("The game executable has no parent directory.");
 
-        string arguments = string.Join(' ', new[]
+        string arguments = string.Join(" ", new[]
         {
             "-screen-fullscreen 0",
             $"-screen-width {area.Width}",
