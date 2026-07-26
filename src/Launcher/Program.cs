@@ -23,12 +23,18 @@ internal static class Program
 
             string? gameOverride = ReadOption(args, "--game");
             string? layoutOverride = ReadOption(args, "--layout");
+            string? playersOverride = ReadOption(args, "--players");
+            string? aspectOverride = ReadOption(args, "--aspect-mode");
             bool dryRun = args.Any(argument => string.Equals(argument, "--dry-run", StringComparison.OrdinalIgnoreCase));
 
             if (!string.IsNullOrWhiteSpace(gameOverride))
                 config.GameExecutable = gameOverride;
             if (!string.IsNullOrWhiteSpace(layoutOverride))
                 config.Layout = layoutOverride;
+            if (int.TryParse(playersOverride, out int playerCount))
+                config.Players = playerCount;
+            if (!string.IsNullOrWhiteSpace(aspectOverride))
+                config.AspectMode = aspectOverride;
 
             config.Normalize();
 
@@ -40,9 +46,10 @@ internal static class Program
                 return 2;
             }
 
-            Console.WriteLine("ULTRAKILL Split-Screen Launcher v0.1.0");
+            Console.WriteLine("ULTRAKILL Split-Screen Launcher v0.2.0");
             Console.WriteLine($"Game: {gameExecutable}");
             Console.WriteLine($"Config: {configPath}");
+            PrintLayoutPreview(config);
 
             if (dryRun)
             {
@@ -74,13 +81,24 @@ internal static class Program
         return null;
     }
 
+    private static void PrintLayoutPreview(LauncherConfig config)
+    {
+        Console.WriteLine($"Players: {config.Players}");
+        Console.WriteLine($"Layout: {config.Layout}");
+        Console.WriteLine($"Aspect: {config.AspectMode} ({config.TargetAspectRatio})");
+        Console.WriteLine($"Gamepads: {string.Join(", ", Enumerable.Range(1, config.Players).Select(player => $"P{player}=#{config.ControllerFor(player)}"))}");
+        Console.WriteLine($"Jaket automation: {(config.Jaket.Enabled && config.Jaket.AutoHostJoin ? "enabled" : "disabled")}");
+    }
+
     private static void PrintHelp()
     {
         Console.WriteLine("ULTRAKILL Split-Screen Launcher");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --game <path>          Path to ULTRAKILL.exe or its folder");
-        Console.WriteLine("  --layout <layout>      vertical or horizontal");
+        Console.WriteLine("  --players <1-4>        Number of local instances");
+        Console.WriteLine("  --layout <layout>      auto, vertical, horizontal or grid");
+        Console.WriteLine("  --aspect-mode <mode>   fit (no stretching) or stretch");
         Console.WriteLine("  --dry-run              Detect and validate without launching");
         Console.WriteLine("  --help                 Show this help");
     }
