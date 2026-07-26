@@ -1,0 +1,10 @@
+{
+  "gameExecutable": "",
+  "layout": "vertical",
+  "launchDelayMs": 3500,
+  "windowReadyTimeoutMs": 30000,
+  "borderless": true,
+  "playerOneMuted": false,
+  "playerTwoMuted": false,
+  "extraArguments": ""
+}
