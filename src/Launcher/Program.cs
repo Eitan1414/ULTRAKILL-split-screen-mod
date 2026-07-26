@@ -10,6 +10,9 @@ internal static class Program
         Console.OutputEncoding = Encoding.UTF8;
         Console.Title = "ULTRAKILL Split-Screen Launcher";
 
+        string? readyFilePath = ReadOption(args, "--ready-file");
+        LaunchSession? session = null;
+
         try
         {
             if (args.Any(argument => string.Equals(argument, "--help", StringComparison.OrdinalIgnoreCase)))
@@ -57,10 +60,11 @@ internal static class Program
             {
                 Console.Error.WriteLine("ULTRAKILL.exe was not found.");
                 Console.Error.WriteLine($"Edit this file and set gameExecutable: {configPath}");
+                WriteHandshake(readyFilePath, "ERROR:ULTRAKILL.exe was not found.");
                 return 2;
             }
 
-            Console.WriteLine("ULTRAKILL Split-Screen Launcher v0.3.0");
+            Console.WriteLine("ULTRAKILL Split-Screen Launcher v0.3.1");
             Console.WriteLine($"Game: {gameExecutable}");
             Console.WriteLine($"Config: {configPath}");
             if (attachedProcessId is int attachPid)
@@ -70,18 +74,22 @@ internal static class Program
             if (dryRun)
             {
                 Console.WriteLine("Dry run completed; no game process was launched.");
+                WriteHandshake(readyFilePath, "OK");
                 return 0;
             }
 
-            var session = new LaunchSession(config, gameExecutable, attachedProcessId);
+            session = new LaunchSession(config, gameExecutable, attachedProcessId, readyFilePath);
             await session.RunAsync().ConfigureAwait(false);
             return 0;
         }
         catch (Exception exception)
         {
+            session?.ReportFailure(exception);
+            WriteHandshake(readyFilePath, $"ERROR:{exception.Message}");
+
             Console.Error.WriteLine();
             Console.Error.WriteLine("The split-screen launcher stopped because of an error:");
-            Console.Error.WriteLine(exception.Message);
+            Console.Error.WriteLine(exception);
             return 1;
         }
     }
@@ -100,6 +108,25 @@ internal static class Program
     private static bool HasFlag(string[] args, string flag)
     {
         return args.Any(argument => string.Equals(argument, flag, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void WriteHandshake(string? path, string value)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            string fullPath = Path.GetFullPath(path);
+            string? directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+            File.WriteAllText(fullPath, value + Environment.NewLine);
+        }
+        catch
+        {
+            // The launcher already reports the main error through stderr.
+        }
     }
 
     private static void PrintLayoutPreview(LauncherConfig config)
@@ -127,6 +154,7 @@ internal static class Program
         Console.WriteLine("  --monitor <1-N>              Monitor number, where 1 is primary");
         Console.WriteLine("  --controller-profile <type>  auto, xbox, playstation or switch");
         Console.WriteLine("  --attach-pid <pid>           Reuse an already-running solo ULTRAKILL as player 1");
+        Console.WriteLine("  --ready-file <path>          Write OK or ERROR after additional players start");
         Console.WriteLine("  --fill-screen                Fill every tile of the target monitor");
         Console.WriteLine("  --dry-run                    Detect and validate without launching");
         Console.WriteLine("  --help                       Show this help");

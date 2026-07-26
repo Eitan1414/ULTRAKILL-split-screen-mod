@@ -5,11 +5,10 @@ namespace ULTRAKILLSplitScreen.Plugin;
 internal sealed class HotkeySplitScreenMenu
 {
     private readonly Func<HotkeyLaunchRequest, string?> _launch;
-    private Rect _windowRect = new(0f, 0f, 620f, 560f);
+    private Rect _windowRect = new(0f, 0f, 620f, 580f);
     private bool _shown;
     private bool _previousCursorVisible;
     private CursorLockMode _previousCursorLock;
-    private float _previousTimeScale = 1f;
     private int _playerChoice;
     private int _profileChoice;
     private int _monitorChoice;
@@ -56,10 +55,8 @@ internal sealed class HotkeySplitScreenMenu
         _status = string.Empty;
         _previousCursorVisible = Cursor.visible;
         _previousCursorLock = Cursor.lockState;
-        _previousTimeScale = Time.timeScale;
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
-        Time.timeScale = 0f;
     }
 
     private void Close()
@@ -67,7 +64,6 @@ internal sealed class HotkeySplitScreenMenu
         _shown = false;
         Cursor.visible = _previousCursorVisible;
         Cursor.lockState = _previousCursorLock;
-        Time.timeScale = _previousTimeScale;
     }
 
     private void DrawWindow(int windowId)
@@ -97,8 +93,8 @@ internal sealed class HotkeySplitScreenMenu
 
         GUILayout.Space(10f);
         GUILayout.Label(
-            "Le joueur 1 reste dans la partie actuelle. Les autres instances sont lancées et disposées automatiquement. " +
-            "Jaket tentera de créer puis rejoindre le même lobby.");
+            "Mode sécurisé : le joueur 1 reste ouvert, les autres joueurs utilisent chacun un dossier BepInEx et des logs séparés. " +
+            "Jaket et le mapping du joueur 1 ne seront activés qu’après le démarrage réussi des autres fenêtres.");
 
         if (!string.IsNullOrWhiteSpace(_status))
         {

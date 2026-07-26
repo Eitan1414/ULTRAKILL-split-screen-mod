@@ -5,7 +5,17 @@ Experimental Windows split-screen launcher and BepInEx bridge for **ULTRAKILL**,
 > [!IMPORTANT]
 > This project uses multiple ULTRAKILL processes. Jaket supplies multiplayer synchronization, while this project handles launching, windows, controller routing and optional lobby automation. Jaket still normally needs a distinct usable Steam identity for each player process.
 
-## Version 0.3 highlights
+## Version 0.3.1 crash fix
+
+- Additional players now run from isolated temporary runtime folders.
+- Every child process gets its own copied BepInEx folder, `LogOutput.log` and Unity `Player.log`.
+- Active logs and BepInEx cache files are never copied from the running solo game.
+- The current solo game switches out of exclusive fullscreen before its window is moved.
+- Player 1 does not enable Jaket, camera changes or controller isolation until the launcher confirms that every additional window started successfully.
+- The `Ctrl+P` popup no longer changes `Time.timeScale`.
+- Startup failures are returned through a handshake file instead of modifying the live solo process first.
+
+## Features
 
 - Press **Ctrl+P while playing solo** to open an in-game split-screen popup.
 - Keep the current game as player 1 and launch only the additional players.
@@ -21,9 +31,10 @@ Experimental Windows split-screen launcher and BepInEx bridge for **ULTRAKILL**,
 
 1. Install **BepInEx 5** for ULTRAKILL and start the game once.
 2. Install **Jaket** separately if you want the players to share the same level.
-3. Download the latest `ULTRAKILL-SplitScreen-v0.3.0-win-x64` artifact from **Actions**.
-4. Extract the **entire ZIP directly into the ULTRAKILL game folder**.
-5. Confirm that these files exist:
+3. Download the latest `ULTRAKILL-SplitScreen-v0.3.1-win-x64` artifact from **Actions**.
+4. Remove the previous `ULTRAKILLSplitScreen.Plugin.dll` and launcher.
+5. Extract the **entire ZIP directly into the ULTRAKILL game folder**.
+6. Confirm that these files exist:
 
 ```text
 ULTRAKILL/
@@ -52,7 +63,26 @@ The launcher must remain in the ULTRAKILL root folder for the in-game `Ctrl+P` s
 7. Enable **Fill the target screen** to occupy the complete monitor, or leave it disabled to keep 16:9 windows.
 8. Select **Activate split-screen**.
 
-The current process becomes player 1. The launcher attaches to its window and starts players 2–4 as required.
+The current process becomes player 1. The launcher first prepares isolated folders under:
+
+```text
+%LOCALAPPDATA%\ULTRAKILLSplitScreen\Sessions\
+```
+
+Only after all additional windows exist does player 1 enable controller isolation and Jaket automation.
+
+## Crash diagnostics
+
+Each extra player has separate logs in its session folder:
+
+```text
+Player2\Logs\Player.log
+Player2\BepInEx\LogOutput.log
+Player3\Logs\Player.log
+Player3\BepInEx\LogOutput.log
+```
+
+The original player 1 log remains in the normal ULTRAKILL/BepInEx location. Old session folders may be deleted manually when ULTRAKILL is closed.
 
 ## Second-monitor mode
 
@@ -115,7 +145,7 @@ Attach an existing solo process manually:
 ULTRAKILLSplitScreen.Launcher.exe --attach-pid 12345 --players 3 --monitor 2
 ```
 
-Available options include `--players`, `--layout`, `--aspect-mode`, `--monitor`, `--controller-profile`, `--attach-pid`, `--fill-screen` and `--dry-run`.
+Available options include `--players`, `--layout`, `--aspect-mode`, `--monitor`, `--controller-profile`, `--attach-pid`, `--ready-file`, `--fill-screen` and `--dry-run`.
 
 ## Important Jaket limitation
 
