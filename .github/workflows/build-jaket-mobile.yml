@@ -1,0 +1,71 @@
+name: Build Jaket Mobile v0.1
+
+on:
+  push:
+    branches:
+      - jaket-mobile-v0.1-build
+    paths:
+      - 'jaket-mobile-ci/**'
+      - '.github/workflows/build-jaket-mobile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout build branch
+        uses: actions/checkout@v4
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Reconstruct mobile overlay
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cat jaket-mobile-ci/overlay.b64.* | base64 -d > /tmp/jm-overlay.zip
+          unzip -t /tmp/jm-overlay.zip
+
+      - name: Checkout pinned JAKET source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/xzxADIxzx/Join-and-kill-em-together.git upstream-jaket
+          cd upstream-jaket
+          git checkout 1f19c835d993255f58262a8e8f60559260546397
+          rm -f assets/assets.bundle
+          unzip -oq /tmp/jm-overlay.zip -d .
+          cp ../jaket-mobile-ci/Jaket.Mobile.CI.csproj ./Jaket.Mobile.CI.csproj
+
+      - name: Restore
+        working-directory: upstream-jaket
+        run: dotnet restore Jaket.Mobile.CI.csproj
+
+      - name: Build mobile plugin
+        working-directory: upstream-jaket
+        run: dotnet build Jaket.Mobile.CI.csproj -c Release --no-restore -o ../dist
+
+      - name: Assemble test package
+        if: success()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p package/JaketMobile/bundles
+          cp dist/Jaket.Mobile.dll package/JaketMobile/
+          cp upstream-jaket/assets/bundles/*.properties package/JaketMobile/bundles/ || true
+          cp upstream-jaket/README.md package/JaketMobile/README.md
+          (cd package && zip -r ../Jaket-Mobile-v0.1-CI.zip JaketMobile)
+
+      - name: Upload plugin artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jaket-Mobile-v0.1-CI
+          path: Jaket-Mobile-v0.1-CI.zip
+          if-no-files-found: error
+          retention-days: 30
