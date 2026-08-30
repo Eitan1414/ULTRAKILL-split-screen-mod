@@ -1,0 +1,62 @@
+name: Diagnose Jaket Mobile overlay blocks
+
+on:
+  push:
+    branches:
+      - jaket-mobile-v0.1-build
+    paths:
+      - '.github/workflows/diag-jaket-overlay.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Inspect historical blocks
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SNAPSHOT=261fc85d715650c41b77f258cc2b72f3c7658a4e
+
+          : > /tmp/block-a.b64
+          for n in $(seq -w 1 7); do
+            git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/block-a.b64
+          done
+          base64 -d /tmp/block-a.b64 > /tmp/block-a.bin
+
+          : > /tmp/block-b.b64
+          for n in $(seq -w 8 11); do
+            git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/block-b.b64
+          done
+          base64 -d /tmp/block-b.b64 > /tmp/block-b.bin
+
+          echo '=== BLOCK A 01-07 ==='
+          wc -c /tmp/block-a.bin
+          file /tmp/block-a.bin
+          xxd -l 32 /tmp/block-a.bin
+          xz -lv /tmp/block-a.bin || true
+          set +e
+          xz -dc --single-stream /tmp/block-a.bin > /tmp/block-a.dec
+          XZRC=$?
+          set -e
+          echo "xz-rc=$XZRC"
+          if [ -s /tmp/block-a.dec ]; then
+            wc -c /tmp/block-a.dec
+            file /tmp/block-a.dec
+            xxd -l 64 /tmp/block-a.dec
+            unzip -l /tmp/block-a.dec || true
+            tar -tf /tmp/block-a.dec | head -100 || true
+            strings -n 8 /tmp/block-a.dec | head -100 || true
+          fi
+
+          echo '=== BLOCK B 08-11 ==='
+          wc -c /tmp/block-b.bin
+          file /tmp/block-b.bin
+          xxd -l 64 /tmp/block-b.bin
+          strings -n 8 /tmp/block-b.bin | head -80 || true
