@@ -1,4 +1,4 @@
-name: Diagnose Jaket Mobile core source
+name: Diagnose Jaket Mobile interop toolchain
 
 on:
   push:
@@ -16,28 +16,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          fetch-depth: 0
-      - name: Print mobile networking and status source
+          dotnet-version: 10.0.x
+
+      - name: Verify UltraDroid extracted input is downloadable
         shell: bash
         run: |
           set -euxo pipefail
-          SNAPSHOT=261fc85d715650c41b77f258cc2b72f3c7658a4e
-          : > /tmp/overlay.b64
-          for n in 01 02 03 04 05 06 07; do
-            git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/overlay.b64
+          URL='https://drive.usercontent.google.com/download?id=1NAdCfh6OFp1xfnz69_tqCx95_gn67Hso&export=download&confirm=t'
+          curl -L --fail --retry 3 --retry-delay 2 "$URL" -o /tmp/JaketMobile_build_input_TEMP.zip
+          ls -lh /tmp/JaketMobile_build_input_TEMP.zip
+          unzip -t /tmp/JaketMobile_build_input_TEMP.zip
+          unzip -l /tmp/JaketMobile_build_input_TEMP.zip
+
+      - name: Probe Il2CppInterop CLI package
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SOURCE='https://nuget.bepinex.dev/v3/index.json'
+          dotnet package search Il2CppInterop.CLI --source "$SOURCE" --take 30 --format json
+          mkdir -p /tmp/interop-cli
+          dotnet tool install Il2CppInterop.CLI --tool-path /tmp/interop-cli --add-source "$SOURCE" --prerelease
+          /tmp/interop-cli/il2cppinterop --help
+          /tmp/interop-cli/il2cppinterop generate --help
+
+      - name: Verify Unity 2019.4.40 base libraries
+        shell: bash
+        run: |
+          set -euxo pipefail
+          for version in 2019.4.40 2019.4.40f1; do
+            echo "=== $version ==="
+            if curl -L --fail --retry 2 "https://unity.bepinex.dev/libraries/${version}.zip" -o "/tmp/unity-${version}.zip"; then
+              unzip -t "/tmp/unity-${version}.zip"
+              unzip -l "/tmp/unity-${version}.zip" | head -40
+              exit 0
+            fi
           done
-          base64 -d /tmp/overlay.b64 > /tmp/overlay.tar.xz
-          rm -rf /tmp/jm && mkdir -p /tmp/jm
-          tar -xJf /tmp/overlay.tar.xz -C /tmp/jm
-          for f in \
-            PORT_STATUS.md \
-            BUILDING_ANDROID.md \
-            src/Jaket/Plugin.cs \
-            src/Jaket/Mobile/MobileLobbyBackend.cs \
-            src/Jaket/Mobile/MobileTransport.cs \
-            src/Jaket/Mobile/MobileIdentity.cs \
-            src/Jaket/Mobile/MobileProtocol.cs; do
-            echo "===== $f ====="
-            sed -n '1,260p' "/tmp/jm/$f"
-          done
+          exit 1
