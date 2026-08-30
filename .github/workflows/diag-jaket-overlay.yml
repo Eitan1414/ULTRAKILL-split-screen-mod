@@ -29,16 +29,17 @@ jobs:
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup>
               <TargetFramework>net8.0</TargetFramework>
+              <RestoreAdditionalProjectSources>https://nuget.samboy.dev/v3/index.json;https://api.nuget.org/v3/index.json</RestoreAdditionalProjectSources>
             </PropertyGroup>
             <ItemGroup>
               <PackageReference Include="UnityEngine.Modules" Version="2019.4.40" />
             </ItemGroup>
           </Project>
           EOF
-          dotnet restore UnityRefs.csproj
+          dotnet restore UnityRefs.csproj --source https://nuget.samboy.dev/v3/index.json --source https://api.nuget.org/v3/index.json
           PKG="$HOME/.nuget/packages/unityengine.modules/2019.4.40"
           test -d "$PKG"
-          find "$PKG" -maxdepth 4 -type f -printf '%P\n' | sort | head -200
+          find "$PKG" -maxdepth 5 -type f -printf '%P\n' | sort | head -250
           tar -C "$HOME/.nuget/packages" -czf /tmp/UnityEngine.Modules-2019.4.40.tar.gz unityengine.modules/2019.4.40
           ls -lh /tmp/UnityEngine.Modules-2019.4.40.tar.gz
 
