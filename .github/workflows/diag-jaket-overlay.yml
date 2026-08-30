@@ -1,4 +1,4 @@
-name: Diagnose Jaket Mobile dependencies
+name: Diagnose Jaket Mobile core source
 
 on:
   push:
@@ -16,22 +16,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
-      - name: Search NuGet.org for compile-only Unity references
+          fetch-depth: 0
+      - name: Print mobile networking and status source
         shell: bash
         run: |
           set -euxo pipefail
-          SOURCE='https://api.nuget.org/v3/index.json'
-          for package in \
-            UnityEngine.UI \
-            Unity.TextMeshPro \
-            Unity.Addressables \
-            Unity.ResourceManager \
-            UnityUIExtensions \
-            TextMeshPro \
-            Addressables; do
-            echo "===== $package ====="
-            dotnet package search "$package" --source "$SOURCE" --take 30 --format json || true
+          SNAPSHOT=261fc85d715650c41b77f258cc2b72f3c7658a4e
+          : > /tmp/overlay.b64
+          for n in 01 02 03 04 05 06 07; do
+            git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/overlay.b64
+          done
+          base64 -d /tmp/overlay.b64 > /tmp/overlay.tar.xz
+          rm -rf /tmp/jm && mkdir -p /tmp/jm
+          tar -xJf /tmp/overlay.tar.xz -C /tmp/jm
+          for f in \
+            PORT_STATUS.md \
+            BUILDING_ANDROID.md \
+            src/Jaket/Plugin.cs \
+            src/Jaket/Mobile/MobileLobbyBackend.cs \
+            src/Jaket/Mobile/MobileTransport.cs \
+            src/Jaket/Mobile/MobileIdentity.cs \
+            src/Jaket/Mobile/MobileProtocol.cs; do
+            echo "===== $f ====="
+            sed -n '1,260p' "/tmp/jm/$f"
           done
