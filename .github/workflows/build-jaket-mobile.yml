@@ -37,9 +37,10 @@ jobs:
           done
           base64 -d /tmp/jm-overlay.b64 > /tmp/jm-overlay.tar.xz
           xz -t /tmp/jm-overlay.tar.xz
-          tar -tJf /tmp/jm-overlay.tar.xz | grep -q '^./src/Jaket/Mobile/MobileTransport.cs$'
-          tar -tJf /tmp/jm-overlay.tar.xz | grep -q '^./src/Jaket/Mobile/MobileLobbyBackend.cs$'
-          tar -tJf /tmp/jm-overlay.tar.xz | grep -q '^./src/Jaket/Mobile/SteamworksFacade.cs$'
+          tar -tJf /tmp/jm-overlay.tar.xz > /tmp/jm-overlay.list
+          grep -Fx './src/Jaket/Mobile/MobileTransport.cs' /tmp/jm-overlay.list
+          grep -Fx './src/Jaket/Mobile/MobileLobbyBackend.cs' /tmp/jm-overlay.list
+          grep -Fx './src/Jaket/Mobile/SteamworksFacade.cs' /tmp/jm-overlay.list
 
       - name: Checkout pinned JAKET source
         shell: bash
