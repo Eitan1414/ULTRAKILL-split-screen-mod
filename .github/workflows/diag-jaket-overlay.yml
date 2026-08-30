@@ -1,4 +1,4 @@
-name: Diagnose Jaket Mobile interop toolchain
+name: Package Jaket Mobile interop toolchain
 
 on:
   push:
@@ -12,32 +12,38 @@ permissions:
   contents: read
 
 jobs:
-  interop-cli:
+  package-toolchain:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            6.0.x
-            10.0.x
-      - name: Probe Il2CppInterop CLI package
-        shell: bash
-        run: |
-          set -euxo pipefail
-          SOURCE='https://nuget.bepinex.dev/v3/index.json'
-          mkdir -p /tmp/interop-cli
-          dotnet tool install Il2CppInterop.CLI --tool-path /tmp/interop-cli --add-source "$SOURCE" --prerelease
-          dotnet --list-runtimes
-          /tmp/interop-cli/il2cppinterop --help
-          /tmp/interop-cli/il2cppinterop generate --help
+          dotnet-version: 6.0.x
 
-  unity-libs:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Verify Unity 2019.4.40 base libraries
+      - name: Download Unity 2019.4.40 base libraries
         shell: bash
         run: |
           set -euxo pipefail
-          curl -L --fail --retry 2 'https://unity.bepinex.dev/libraries/2019.4.40.zip' -o /tmp/unity.zip
-          unzip -t /tmp/unity.zip
-          unzip -l /tmp/unity.zip | head -40
+          mkdir -p /tmp/jm-toolchain/unity
+          curl -L --fail --retry 3 'https://unity.bepinex.dev/libraries/2019.4.40.zip' -o /tmp/unity.zip
+          unzip -q /tmp/unity.zip -d /tmp/jm-toolchain/unity
+          test -f /tmp/jm-toolchain/unity/UnityEngine.CoreModule.dll
+
+      - name: Package portable .NET 6 runtime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/jm-toolchain/dotnet/host/fxr /tmp/jm-toolchain/dotnet/shared/Microsoft.NETCore.App
+          cp /usr/share/dotnet/dotnet /tmp/jm-toolchain/dotnet/
+          cp -a /usr/share/dotnet/host/fxr/6.0.36 /tmp/jm-toolchain/dotnet/host/fxr/
+          cp -a /usr/share/dotnet/shared/Microsoft.NETCore.App/6.0.36 /tmp/jm-toolchain/dotnet/shared/Microsoft.NETCore.App/
+          /tmp/jm-toolchain/dotnet/dotnet --list-runtimes
+          tar -C /tmp -cJf /tmp/JaketMobile-interop-toolchain.tar.xz jm-toolchain
+          ls -lh /tmp/JaketMobile-interop-toolchain.tar.xz
+
+      - name: Upload portable interop toolchain
+        uses: actions/upload-artifact@v4
+        with:
+          name: JaketMobile-interop-toolchain
+          path: /tmp/JaketMobile-interop-toolchain.tar.xz
+          if-no-files-found: error
+          retention-days: 7
