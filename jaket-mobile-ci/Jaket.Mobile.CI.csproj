@@ -13,10 +13,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NextBepLoader.Core.IL2CPP" Version="0.0.1" />
-    <PackageReference Include="HarmonyX" Version="2.13.0" />
-    <PackageReference Include="Il2CppInterop.Runtime" Version="1.4.6-ci.579" />
-    <PackageReference Include="Il2CppInterop.HarmonySupport" Version="1.4.6-ci.579" />
+    <!-- Compile against the canonical BepInEx IL2CPP API used by the mobile
+         source (BasePlugin, BepInPlugin and ManualLogSource). Runtime loader
+         compatibility with NextBepLoader is validated separately on device. -->
+    <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.785" />
     <PackageReference Include="UnityEngine.Modules" Version="2022.3.29" />
     <PackageReference Include="Unity.InputSystem" Version="1.5.0" />
     <PackageReference Include="Ultrakill.GameLibs-Stripped-Publicized" Version="0.0.16-d" />
