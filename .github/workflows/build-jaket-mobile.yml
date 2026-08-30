@@ -24,11 +24,89 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Reconstruct mobile overlay
+      - name: Reconstruct and repair mobile overlay
         shell: bash
         run: |
           set -euxo pipefail
-          cat jaket-mobile-ci/overlay.b64.* | base64 -d > /tmp/jm-overlay.zip
+          cat jaket-mobile-ci/overlay.b64.* | base64 -d > /tmp/jm-overlay.raw.zip
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          import zipfile
+
+          raw_path = Path('/tmp/jm-overlay.raw.zip')
+          clean_path = Path('/tmp/jm-overlay.zip')
+          data = bytearray(raw_path.read_bytes())
+          print(f'overlay-bytes={len(data)}')
+
+          eocd = data.rfind(b'PK\x05\x06')
+          if eocd < 0:
+              raise SystemExit('EOCD signature not found')
+
+          entries = struct.unpack_from('<H', data, eocd + 10)[0]
+          cd_size = struct.unpack_from('<I', data, eocd + 12)[0]
+          cd_offset = struct.unpack_from('<I', data, eocd + 16)[0]
+          expected_size = cd_offset + cd_size + 22
+          print(f'eocd={eocd} entries={entries} cd_offset={cd_offset} cd_size={cd_size} expected-size={expected_size} delta={len(data)-expected_size}')
+
+          candidates = []
+          start = max(0, cd_offset - 32)
+          end = min(len(data), cd_offset + 32)
+          pos = data.find(b'PK\x01\x02', start, end)
+          while pos >= 0:
+              candidates.append(pos)
+              pos = data.find(b'PK\x01\x02', pos + 1, end)
+          print(f'central-directory-candidates={candidates}')
+
+          # Python's zipfile is tolerant of a global central-directory displacement.
+          # If every payload can still be read and CRC-checked, repack it into a clean ZIP.
+          failures = []
+          recovered = []
+          try:
+              with zipfile.ZipFile(raw_path, 'r') as source:
+                  print(f'zipfile-entries={len(source.infolist())}')
+                  for info in source.infolist():
+                      try:
+                          payload = source.read(info)
+                          recovered.append((info, payload))
+                      except Exception as exc:
+                          failures.append((info.filename, repr(exc)))
+                          print(f'READ-FAIL {info.filename}: {exc!r}')
+          except Exception as exc:
+              print(f'ZIP-OPEN-FAIL: {exc!r}')
+              failures.append(('<archive>', repr(exc)))
+
+          if not failures and recovered:
+              with zipfile.ZipFile(clean_path, 'w', compression=zipfile.ZIP_DEFLATED) as target:
+                  for info, payload in recovered:
+                      zi = zipfile.ZipInfo(info.filename, date_time=info.date_time)
+                      zi.external_attr = info.external_attr
+                      zi.internal_attr = info.internal_attr
+                      zi.create_system = info.create_system
+                      zi.compress_type = zipfile.ZIP_DEFLATED
+                      target.writestr(zi, payload)
+              print('overlay-repacked-with-zipfile')
+              raise SystemExit(0)
+
+          # If only the EOCD central-directory pointer is displaced by two bytes,
+          # repair that field and let unzip validate the result.
+          if candidates:
+              nearest = min(candidates, key=lambda value: abs(value - cd_offset))
+              displacement = nearest - cd_offset
+              print(f'nearest-central-directory={nearest} displacement={displacement}')
+              if displacement in (-2, 2):
+                  repaired = bytearray(data)
+                  struct.pack_into('<I', repaired, eocd + 16, nearest)
+                  clean_path.write_bytes(repaired)
+                  print('overlay-eocd-offset-repaired')
+                  raise SystemExit(0)
+
+          # Keep the raw archive so the following unzip command prints the native error.
+          clean_path.write_bytes(data)
+          raise SystemExit('Could not safely repair overlay; see diagnostics above')
+          PY
+
           unzip -t /tmp/jm-overlay.zip
 
       - name: Checkout pinned JAKET source
