@@ -19,17 +19,19 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - name: Search BepInEx NuGet feed
+      - name: Search NuGet.org for compile-only Unity references
         shell: bash
         run: |
           set -euxo pipefail
-          SOURCE='https://nuget.bepinex.dev/v3/index.json'
+          SOURCE='https://api.nuget.org/v3/index.json'
           for package in \
             UnityEngine.UI \
             Unity.TextMeshPro \
             Unity.Addressables \
             Unity.ResourceManager \
-            UnityUIExtensions; do
+            UnityUIExtensions \
+            TextMeshPro \
+            Addressables; do
             echo "===== $package ====="
-            dotnet package search "$package" --source "$SOURCE" --take 25 --format json || true
+            dotnet package search "$package" --source "$SOURCE" --take 30 --format json || true
           done
