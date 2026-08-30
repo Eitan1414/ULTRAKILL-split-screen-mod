@@ -25,13 +25,13 @@ jobs:
           SNAPSHOT=261fc85d715650c41b77f258cc2b72f3c7658a4e
 
           : > /tmp/block-a.b64
-          for n in $(seq -w 1 7); do
+          for n in 01 02 03 04 05 06 07; do
             git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/block-a.b64
           done
           base64 -d /tmp/block-a.b64 > /tmp/block-a.bin
 
           : > /tmp/block-b.b64
-          for n in $(seq -w 8 11); do
+          for n in 08 09 10 11; do
             git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/block-b.b64
           done
           base64 -d /tmp/block-b.b64 > /tmp/block-b.bin
