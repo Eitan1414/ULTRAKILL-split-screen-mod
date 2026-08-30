@@ -18,93 +18,172 @@ jobs:
     steps:
       - name: Checkout build branch
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
-      - name: Reconstruct and repair mobile overlay
+      - name: Recover clean mobile overlay
         shell: bash
         run: |
           set -euxo pipefail
-          cat jaket-mobile-ci/overlay.b64.* | base64 -d > /tmp/jm-overlay.raw.zip
+
+          # 261fc85... is the last snapshot before the later partial "Refresh"
+          # replacements. It contains the complete 11-part overlay, but the ZIP
+          # is exactly two bytes short in one local file payload.
+          SNAPSHOT=261fc85d715650c41b77f258cc2b72f3c7658a4e
+          : > /tmp/jm-overlay.b64
+          for n in $(seq -w 1 11); do
+            git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/jm-overlay.b64
+          done
+          base64 -d /tmp/jm-overlay.b64 > /tmp/jm-overlay.raw.zip
 
           python3 - <<'PY'
           from pathlib import Path
+          import binascii
           import struct
+          import zlib
           import zipfile
 
           raw_path = Path('/tmp/jm-overlay.raw.zip')
-          clean_path = Path('/tmp/jm-overlay.zip')
+          fixed_path = Path('/tmp/jm-overlay.zip')
           data = bytearray(raw_path.read_bytes())
-          print(f'overlay-bytes={len(data)}')
 
-          eocd = data.rfind(b'PK\x05\x06')
+          LOCAL = b'PK\x03\x04'
+          CENTRAL = b'PK\x01\x02'
+          EOCD = b'PK\x05\x06'
+
+          eocd = data.rfind(EOCD)
           if eocd < 0:
               raise SystemExit('EOCD signature not found')
 
-          entries = struct.unpack_from('<H', data, eocd + 10)[0]
+          count = struct.unpack_from('<H', data, eocd + 10)[0]
           cd_size = struct.unpack_from('<I', data, eocd + 12)[0]
-          cd_offset = struct.unpack_from('<I', data, eocd + 16)[0]
-          expected_size = cd_offset + cd_size + 22
-          print(f'eocd={eocd} entries={entries} cd_offset={cd_offset} cd_size={cd_size} expected-size={expected_size} delta={len(data)-expected_size}')
+          claimed_cd = struct.unpack_from('<I', data, eocd + 16)[0]
+          actual_cd = eocd - cd_size
+          expected_size = claimed_cd + cd_size + 22
+          print(f'overlay-bytes={len(data)} expected={expected_size} delta={len(data)-expected_size}')
+          print(f'entries={count} claimed-cd={claimed_cd} actual-cd={actual_cd} cd-delta={actual_cd-claimed_cd}')
 
-          candidates = []
-          start = max(0, cd_offset - 32)
-          end = min(len(data), cd_offset + 32)
-          pos = data.find(b'PK\x01\x02', start, end)
-          while pos >= 0:
-              candidates.append(pos)
-              pos = data.find(b'PK\x01\x02', pos + 1, end)
-          print(f'central-directory-candidates={candidates}')
+          if len(data) - expected_size != -2:
+              raise SystemExit('Overlay no longer matches the known two-byte-loss signature')
+          if data[actual_cd:actual_cd+4] != CENTRAL:
+              raise SystemExit('Could not locate actual central directory')
 
-          # Python's zipfile is tolerant of a global central-directory displacement.
-          # If every payload can still be read and CRC-checked, repack it into a clean ZIP.
-          failures = []
-          recovered = []
-          try:
-              with zipfile.ZipFile(raw_path, 'r') as source:
-                  print(f'zipfile-entries={len(source.infolist())}')
-                  for info in source.infolist():
-                      try:
-                          payload = source.read(info)
-                          recovered.append((info, payload))
-                      except Exception as exc:
-                          failures.append((info.filename, repr(exc)))
-                          print(f'READ-FAIL {info.filename}: {exc!r}')
-          except Exception as exc:
-              print(f'ZIP-OPEN-FAIL: {exc!r}')
-              failures.append(('<archive>', repr(exc)))
+          infos = []
+          pos = actual_cd
+          for index in range(count):
+              if data[pos:pos+4] != CENTRAL:
+                  raise SystemExit(f'Bad central-directory signature at entry {index+1}, offset {pos}')
+              flags = struct.unpack_from('<H', data, pos + 8)[0]
+              method = struct.unpack_from('<H', data, pos + 10)[0]
+              crc = struct.unpack_from('<I', data, pos + 16)[0]
+              csize = struct.unpack_from('<I', data, pos + 20)[0]
+              usize = struct.unpack_from('<I', data, pos + 24)[0]
+              fnlen = struct.unpack_from('<H', data, pos + 28)[0]
+              extralen = struct.unpack_from('<H', data, pos + 30)[0]
+              commentlen = struct.unpack_from('<H', data, pos + 32)[0]
+              local_off = struct.unpack_from('<I', data, pos + 42)[0]
+              name = bytes(data[pos+46:pos+46+fnlen]).decode('utf-8', 'replace')
+              infos.append({
+                  'index': index + 1,
+                  'name': name,
+                  'flags': flags,
+                  'method': method,
+                  'crc': crc,
+                  'csize': csize,
+                  'usize': usize,
+                  'local_off': local_off,
+              })
+              pos += 46 + fnlen + extralen + commentlen
 
-          if not failures and recovered:
-              with zipfile.ZipFile(clean_path, 'w', compression=zipfile.ZIP_DEFLATED) as target:
-                  for info, payload in recovered:
-                      zi = zipfile.ZipInfo(info.filename, date_time=info.date_time)
-                      zi.external_attr = info.external_attr
-                      zi.internal_attr = info.internal_attr
-                      zi.create_system = info.create_system
-                      zi.compress_type = zipfile.ZIP_DEFLATED
-                      target.writestr(zi, payload)
-              print('overlay-repacked-with-zipfile')
-              raise SystemExit(0)
+          # Find the point where local-header offsets start being two bytes early.
+          deltas = []
+          for info in infos:
+              off = info['local_off']
+              if data[off:off+4] == LOCAL:
+                  delta = 0
+              elif off >= 2 and data[off-2:off+2] == LOCAL:
+                  delta = -2
+              elif data[off+2:off+6] == LOCAL:
+                  delta = 2
+              else:
+                  delta = None
+              deltas.append(delta)
+              print(f"entry={info['index']:02d} delta={delta!s:>4} offset={off:5d} {info['name']}")
 
-          # If only the EOCD central-directory pointer is displaced by two bytes,
-          # repair that field and let unzip validate the result.
-          if candidates:
-              nearest = min(candidates, key=lambda value: abs(value - cd_offset))
-              displacement = nearest - cd_offset
-              print(f'nearest-central-directory={nearest} displacement={displacement}')
-              if displacement in (-2, 2):
-                  repaired = bytearray(data)
-                  struct.pack_into('<I', repaired, eocd + 16, nearest)
-                  clean_path.write_bytes(repaired)
-                  print('overlay-eocd-offset-repaired')
-                  raise SystemExit(0)
+          transition = None
+          for i in range(1, len(deltas)):
+              if deltas[i-1] == 0 and deltas[i] == -2:
+                  transition = i
+                  break
 
-          # Keep the raw archive so the following unzip command prints the native error.
-          clean_path.write_bytes(data)
-          raise SystemExit('Could not safely repair overlay; see diagnostics above')
+          if transition is None:
+              raise SystemExit('Could not locate 0 -> -2 local-header transition')
+
+          previous = infos[transition - 1]
+          following = infos[transition]
+          prev_off = previous['local_off']
+          next_actual = following['local_off'] - 2
+          print(f"two-byte loss is between {previous['name']} and {following['name']} at raw offset {next_actual}")
+
+          if data[prev_off:prev_off+4] != LOCAL:
+              raise SystemExit('Previous local header is not intact')
+
+          local_flags = struct.unpack_from('<H', data, prev_off + 6)[0]
+          local_method = struct.unpack_from('<H', data, prev_off + 8)[0]
+          fnlen = struct.unpack_from('<H', data, prev_off + 26)[0]
+          extralen = struct.unpack_from('<H', data, prev_off + 28)[0]
+          payload_start = prev_off + 30 + fnlen + extralen
+          available = next_actual - payload_start
+          missing = previous['csize'] - available
+          print(f"previous={previous['name']} method={previous['method']} flags=0x{previous['flags']:04x} csize={previous['csize']} available={available} missing={missing}")
+
+          if previous['method'] != 8 or local_method != 8:
+              raise SystemExit('Known damaged entry is not DEFLATE-compressed')
+          if local_flags & 0x08:
+              raise SystemExit('Unexpected data descriptor on damaged entry')
+          if missing != 2:
+              raise SystemExit(f'Expected exactly two missing compressed bytes, got {missing}')
+
+          damaged_payload = bytes(data[payload_start:next_actual])
+          wanted_crc = previous['crc']
+          wanted_size = previous['usize']
+          recovered_bytes = None
+
+          # The two missing bytes are at the end of this compressed payload.
+          # There are only 65,536 possibilities; CRC32 + uncompressed size gives
+          # an exact check without guessing source text.
+          for value in range(65536):
+              suffix = bytes((value & 0xff, value >> 8))
+              try:
+                  plain = zlib.decompress(damaged_payload + suffix, -15)
+              except zlib.error:
+                  continue
+              if len(plain) != wanted_size:
+                  continue
+              if (binascii.crc32(plain) & 0xffffffff) != wanted_crc:
+                  continue
+              recovered_bytes = suffix
+              print(f'recovered-missing-bytes={suffix.hex()} candidate={value}')
+              break
+
+          if recovered_bytes is None:
+              raise SystemExit('Could not recover the two missing DEFLATE bytes')
+
+          repaired = data[:next_actual] + recovered_bytes + data[next_actual:]
+          fixed_path.write_bytes(repaired)
+          print(f'repaired-overlay-bytes={len(repaired)}')
+
+          with zipfile.ZipFile(fixed_path, 'r') as archive:
+              bad = archive.testzip()
+              print(f'zipfile-test={bad!r}')
+              if bad is not None:
+                  raise SystemExit(f'CRC/decompression failure after repair: {bad}')
+              print(f'validated-entries={len(archive.infolist())}')
           PY
 
           unzip -t /tmp/jm-overlay.zip
