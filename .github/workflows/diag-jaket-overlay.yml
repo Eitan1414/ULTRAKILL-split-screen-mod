@@ -97,7 +97,7 @@ jobs:
           cp -a "$REF8" "$DOT/packs/"
           cp -a "$NETSTD" "$DOT/packs/"
 
-          cp -a /root/.nuget/packages/. "$ROOT/nuget/"
+          cp -a "$HOME/.nuget/packages/." "$ROOT/nuget/"
           mv /tmp/jm-build "$ROOT/source"
 
           DOTNET_ROOT="$DOT" NUGET_PACKAGES="$ROOT/nuget" "$DOT/dotnet" --info
