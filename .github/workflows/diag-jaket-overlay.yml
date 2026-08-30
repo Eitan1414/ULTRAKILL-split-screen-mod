@@ -18,45 +18,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Inspect historical blocks
+      - name: Inspect embedded mobile project and library layout
         shell: bash
         run: |
           set -euxo pipefail
           SNAPSHOT=261fc85d715650c41b77f258cc2b72f3c7658a4e
-
-          : > /tmp/block-a.b64
+          : > /tmp/overlay.b64
           for n in 01 02 03 04 05 06 07; do
-            git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/block-a.b64
+            git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/overlay.b64
           done
-          base64 -d /tmp/block-a.b64 > /tmp/block-a.bin
+          base64 -d /tmp/overlay.b64 > /tmp/overlay.tar.xz
+          rm -rf /tmp/jm-inspect
+          mkdir -p /tmp/jm-inspect
+          tar -xJf /tmp/overlay.tar.xz -C /tmp/jm-inspect
 
-          : > /tmp/block-b.b64
-          for n in 08 09 10 11; do
-            git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/block-b.b64
-          done
-          base64 -d /tmp/block-b.b64 > /tmp/block-b.bin
-
-          echo '=== BLOCK A 01-07 ==='
-          wc -c /tmp/block-a.bin
-          file /tmp/block-a.bin
-          xxd -l 32 /tmp/block-a.bin
-          xz -lv /tmp/block-a.bin || true
-          set +e
-          xz -dc --single-stream /tmp/block-a.bin > /tmp/block-a.dec
-          XZRC=$?
-          set -e
-          echo "xz-rc=$XZRC"
-          if [ -s /tmp/block-a.dec ]; then
-            wc -c /tmp/block-a.dec
-            file /tmp/block-a.dec
-            xxd -l 64 /tmp/block-a.dec
-            unzip -l /tmp/block-a.dec || true
-            tar -tf /tmp/block-a.dec | head -100 || true
-            strings -n 8 /tmp/block-a.dec | head -100 || true
-          fi
-
-          echo '=== BLOCK B 08-11 ==='
-          wc -c /tmp/block-b.bin
-          file /tmp/block-b.bin
-          xxd -l 64 /tmp/block-b.bin
-          strings -n 8 /tmp/block-b.bin | head -80 || true
+          echo '=== EMBEDDED JAKET.CSPROJ ==='
+          cat /tmp/jm-inspect/Jaket.csproj || true
+          echo '=== LIB TREE ==='
+          find /tmp/jm-inspect/lib -maxdepth 3 -type f -printf '%P %s bytes\n' | sort || true
+          echo '=== TOP-LEVEL FILES ==='
+          find /tmp/jm-inspect -maxdepth 2 -type f -printf '%P %s bytes\n' | sort
