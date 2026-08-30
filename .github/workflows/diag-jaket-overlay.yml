@@ -37,13 +37,14 @@ jobs:
           cp -a /usr/share/dotnet/host/fxr/6.0.36 /tmp/jm-toolchain/dotnet/host/fxr/
           cp -a /usr/share/dotnet/shared/Microsoft.NETCore.App/6.0.36 /tmp/jm-toolchain/dotnet/shared/Microsoft.NETCore.App/
           /tmp/jm-toolchain/dotnet/dotnet --list-runtimes
-          tar -C /tmp -cJf /tmp/JaketMobile-interop-toolchain.tar.xz jm-toolchain
-          ls -lh /tmp/JaketMobile-interop-toolchain.tar.xz
+          tar -C /tmp -czf /tmp/JaketMobile-interop-toolchain.tar.gz jm-toolchain
+          ls -lh /tmp/JaketMobile-interop-toolchain.tar.gz
 
       - name: Upload portable interop toolchain
         uses: actions/upload-artifact@v4
         with:
-          name: JaketMobile-interop-toolchain
-          path: /tmp/JaketMobile-interop-toolchain.tar.xz
+          name: JaketMobile-interop-toolchain-gzip
+          path: /tmp/JaketMobile-interop-toolchain.tar.gz
           if-no-files-found: error
+          compression-level: 0
           retention-days: 7
