@@ -24,8 +24,8 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          URL='https://drive.usercontent.google.com/download?id=1NAdCfh6OFp1xfnz69_tqCx95_gn67Hso&export=download&confirm=t'
-          curl -L --fail --retry 3 --retry-delay 2 "$URL" -o /tmp/JaketMobile_build_input_TEMP.zip
+          python3 -m pip install --user --quiet gdown
+          python3 -m gdown 'https://drive.google.com/uc?id=1NAdCfh6OFp1xfnz69_tqCx95_gn67Hso' -O /tmp/JaketMobile_build_input_TEMP.zip
           ls -lh /tmp/JaketMobile_build_input_TEMP.zip
           unzip -t /tmp/JaketMobile_build_input_TEMP.zip
           unzip -l /tmp/JaketMobile_build_input_TEMP.zip
