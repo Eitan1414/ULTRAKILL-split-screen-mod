@@ -26,101 +26,20 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Recover mobile overlay
+      - name: Reconstruct complete mobile overlay
         shell: bash
         run: |
           set -euxo pipefail
           SNAPSHOT=261fc85d715650c41b77f258cc2b72f3c7658a4e
           : > /tmp/jm-overlay.b64
-          for n in $(seq -w 1 11); do
+          for n in 01 02 03 04 05 06 07; do
             git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/jm-overlay.b64
           done
-          base64 -d /tmp/jm-overlay.b64 > /tmp/jm-overlay.raw.zip
-
-          echo '=== raw archive ==='
-          ls -l /tmp/jm-overlay.raw.zip
-          unzip -t /tmp/jm-overlay.raw.zip || true
-
-          echo '=== Info-ZIP recovery ==='
-          rm -f /tmp/jm-overlay.zip
-          set +e
-          zip -FF /tmp/jm-overlay.raw.zip --out /tmp/jm-overlay.zip </dev/null
-          ZIP_RC=$?
-          set -e
-          echo "zip-FF-rc=$ZIP_RC"
-
-          if [ -f /tmp/jm-overlay.zip ] && unzip -t /tmp/jm-overlay.zip; then
-            echo 'Recovered overlay is valid.'
-            exit 0
-          fi
-
-          echo '=== map central directory to actual local headers ==='
-          python3 - <<'PY'
-          from pathlib import Path
-          import struct
-
-          data = Path('/tmp/jm-overlay.raw.zip').read_bytes()
-          LOCAL = b'PK\x03\x04'
-          CENTRAL = b'PK\x01\x02'
-          EOCD = b'PK\x05\x06'
-
-          eocd = data.rfind(EOCD)
-          if eocd < 0:
-              raise SystemExit('EOCD not found')
-          count = struct.unpack_from('<H', data, eocd + 10)[0]
-          cd_size = struct.unpack_from('<I', data, eocd + 12)[0]
-          claimed_cd = struct.unpack_from('<I', data, eocd + 16)[0]
-          actual_cd = eocd - cd_size
-          print(f'len={len(data)} eocd={eocd} count={count} claimed_cd={claimed_cd} actual_cd={actual_cd} delta={actual_cd-claimed_cd}')
-
-          central = []
-          p = actual_cd
-          for i in range(count):
-              if data[p:p+4] != CENTRAL:
-                  raise SystemExit(f'bad central signature at {p}')
-              fn = struct.unpack_from('<H', data, p+28)[0]
-              ex = struct.unpack_from('<H', data, p+30)[0]
-              co = struct.unpack_from('<H', data, p+32)[0]
-              off = struct.unpack_from('<I', data, p+42)[0]
-              csize = struct.unpack_from('<I', data, p+20)[0]
-              usize = struct.unpack_from('<I', data, p+24)[0]
-              crc = struct.unpack_from('<I', data, p+16)[0]
-              method = struct.unpack_from('<H', data, p+10)[0]
-              name = data[p+46:p+46+fn].decode('utf-8','replace')
-              central.append((name, off, csize, usize, crc, method))
-              p += 46 + fn + ex + co
-
-          locals_by_name = {}
-          p = 0
-          while True:
-              p = data.find(LOCAL, p)
-              if p < 0:
-                  break
-              if p + 30 <= len(data):
-                  fn = struct.unpack_from('<H', data, p+26)[0]
-                  ex = struct.unpack_from('<H', data, p+28)[0]
-                  if fn and fn < 512 and p + 30 + fn + ex <= len(data):
-                      raw = data[p+30:p+30+fn]
-                      try:
-                          name = raw.decode('utf-8')
-                      except UnicodeDecodeError:
-                          name = None
-                      if name and ('/' in name or '.' in name):
-                          locals_by_name.setdefault(name, []).append(p)
-              p += 1
-
-          print(f'actual-local-headers={sum(len(v) for v in locals_by_name.values())} unique-names={len(locals_by_name)}')
-          for i, (name, claimed, csize, usize, crc, method) in enumerate(central, 1):
-              actuals = locals_by_name.get(name, [])
-              if actuals:
-                  actual = min(actuals, key=lambda x: abs(x-claimed))
-                  delta = actual - claimed
-                  print(f'{i:02d} claimed={claimed:6d} actual={actual:6d} delta={delta:6d} csize={csize:5d} method={method} {name}')
-              else:
-                  print(f'{i:02d} claimed={claimed:6d} actual=NONE   delta=NONE   csize={csize:5d} method={method} {name}')
-
-          raise SystemExit('Info-ZIP could not recover archive; mapping printed above')
-          PY
+          base64 -d /tmp/jm-overlay.b64 > /tmp/jm-overlay.tar.xz
+          xz -t /tmp/jm-overlay.tar.xz
+          tar -tJf /tmp/jm-overlay.tar.xz | grep -q '^./src/Jaket/Mobile/MobileTransport.cs$'
+          tar -tJf /tmp/jm-overlay.tar.xz | grep -q '^./src/Jaket/Mobile/MobileLobbyBackend.cs$'
+          tar -tJf /tmp/jm-overlay.tar.xz | grep -q '^./src/Jaket/Mobile/SteamworksFacade.cs$'
 
       - name: Checkout pinned JAKET source
         shell: bash
@@ -130,8 +49,10 @@ jobs:
           cd upstream-jaket
           git checkout 1f19c835d993255f58262a8e8f60559260546397
           rm -f assets/assets.bundle
-          unzip -oq /tmp/jm-overlay.zip -d .
+          tar -xJf /tmp/jm-overlay.tar.xz
           cp ../jaket-mobile-ci/Jaket.Mobile.CI.csproj ./Jaket.Mobile.CI.csproj
+          test -f src/Jaket/Mobile/MobileTransport.cs
+          test -f src/Jaket/Mobile/MobileLobbyBackend.cs
 
       - name: Restore
         working-directory: upstream-jaket
