@@ -1,4 +1,4 @@
-name: Diagnose Jaket Mobile overlay blocks
+name: Diagnose Jaket Mobile dependencies
 
 on:
   push:
@@ -16,25 +16,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          fetch-depth: 0
-      - name: Inspect embedded mobile project and library layout
+          dotnet-version: 10.0.x
+      - name: Search BepInEx NuGet feed
         shell: bash
         run: |
           set -euxo pipefail
-          SNAPSHOT=261fc85d715650c41b77f258cc2b72f3c7658a4e
-          : > /tmp/overlay.b64
-          for n in 01 02 03 04 05 06 07; do
-            git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/overlay.b64
+          SOURCE='https://nuget.bepinex.dev/v3/index.json'
+          for package in \
+            UnityEngine.UI \
+            Unity.TextMeshPro \
+            Unity.Addressables \
+            Unity.ResourceManager \
+            UnityUIExtensions; do
+            echo "===== $package ====="
+            dotnet package search "$package" --source "$SOURCE" --take 25 --format json || true
           done
-          base64 -d /tmp/overlay.b64 > /tmp/overlay.tar.xz
-          rm -rf /tmp/jm-inspect
-          mkdir -p /tmp/jm-inspect
-          tar -xJf /tmp/overlay.tar.xz -C /tmp/jm-inspect
-
-          echo '=== EMBEDDED JAKET.CSPROJ ==='
-          cat /tmp/jm-inspect/Jaket.csproj || true
-          echo '=== LIB TREE ==='
-          find /tmp/jm-inspect/lib -maxdepth 3 -type f -printf '%P %s bytes\n' | sort || true
-          echo '=== TOP-LEVEL FILES ==='
-          find /tmp/jm-inspect -maxdepth 2 -type f -printf '%P %s bytes\n' | sort
