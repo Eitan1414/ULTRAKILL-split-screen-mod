@@ -17,16 +17,17 @@ jobs:
     steps:
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: |
+            6.0.x
+            10.0.x
       - name: Probe Il2CppInterop CLI package
         shell: bash
         run: |
           set -euxo pipefail
           SOURCE='https://nuget.bepinex.dev/v3/index.json'
-          dotnet package search Il2CppInterop.CLI --source "$SOURCE" --take 30 --format json
           mkdir -p /tmp/interop-cli
           dotnet tool install Il2CppInterop.CLI --tool-path /tmp/interop-cli --add-source "$SOURCE" --prerelease
-          find /tmp/interop-cli -maxdepth 2 -type f -printf '%P\n' | sort
+          dotnet --list-runtimes
           /tmp/interop-cli/il2cppinterop --help
           /tmp/interop-cli/il2cppinterop generate --help
 
@@ -37,12 +38,6 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          for version in 2019.4.40 2019.4.40f1; do
-            echo "=== $version ==="
-            if curl -L --fail --retry 2 "https://unity.bepinex.dev/libraries/${version}.zip" -o "/tmp/unity-${version}.zip"; then
-              unzip -t "/tmp/unity-${version}.zip"
-              unzip -l "/tmp/unity-${version}.zip" | head -40
-              exit 0
-            fi
-          done
-          exit 1
+          curl -L --fail --retry 2 'https://unity.bepinex.dev/libraries/2019.4.40.zip' -o /tmp/unity.zip
+          unzip -t /tmp/unity.zip
+          unzip -l /tmp/unity.zip | head -40
