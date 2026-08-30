@@ -1,4 +1,4 @@
-name: Package Jaket Mobile private build workspace
+name: Package Jaket Mobile Unity managed references
 
 on:
   push:
@@ -12,105 +12,41 @@ permissions:
   contents: read
 
 jobs:
-  package-workspace:
+  unity-managed-refs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
-      - name: Reconstruct Jaket Mobile source workspace
+      - name: Restore UnityEngine.Modules 2019.4.40
         shell: bash
         run: |
           set -euxo pipefail
-          SNAPSHOT=261fc85d715650c41b77f258cc2b72f3c7658a4e
-          : > /tmp/jm-overlay.b64
-          for n in 01 02 03 04 05 06 07; do
-            git show "$SNAPSHOT:jaket-mobile-ci/overlay.b64.$n" >> /tmp/jm-overlay.b64
-          done
-          base64 -d /tmp/jm-overlay.b64 > /tmp/jm-overlay.tar.xz
-          xz -t /tmp/jm-overlay.tar.xz
-
-          git clone https://github.com/xzxADIxzx/Join-and-kill-em-together.git /tmp/jm-build
-          cd /tmp/jm-build
-          git checkout 1f19c835d993255f58262a8e8f60559260546397
-          rm -f assets/assets.bundle
-          tar -xJf /tmp/jm-overlay.tar.xz
-
-          cat > Jaket.Mobile.Exact.csproj <<'EOF'
+          mkdir -p /tmp/unity-managed
+          cd /tmp/unity-managed
+          cat > UnityRefs.csproj <<'EOF'
           <Project Sdk="Microsoft.NET.Sdk">
             <PropertyGroup>
               <TargetFramework>net8.0</TargetFramework>
-              <LangVersion>14.0</LangVersion>
-              <AssemblyName>Jaket.Mobile</AssemblyName>
-              <RootNamespace>Jaket</RootNamespace>
-              <Description>JAKET Mobile v0.1 Android/IL2CPP exact UltraDroid build</Description>
-              <Version>0.1.0</Version>
-              <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-              <Nullable>disable</Nullable>
-              <NoWarn>IDE0028;IDE0044;IDE0130;IDE0290;IDE0300;IDE1006</NoWarn>
-              <RestoreAdditionalProjectSources>https://api.nuget.org/v3/index.json;https://nuget.bepinex.dev/v3/index.json;https://nuget.samboy.dev/v3/index.json</RestoreAdditionalProjectSources>
             </PropertyGroup>
-
             <ItemGroup>
-              <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.785" />
-              <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />
-            </ItemGroup>
-
-            <ItemGroup>
-              <InteropAssemblies Include="lib/interop/*.dll" />
-              <Reference Include="@(InteropAssemblies)" Publicize="true" Private="false" />
-            </ItemGroup>
-
-            <ItemGroup>
-              <Compile Remove="src/Jaket/Assets/BundleBuilder.cs" />
+              <PackageReference Include="UnityEngine.Modules" Version="2019.4.40" />
             </ItemGroup>
           </Project>
           EOF
+          dotnet restore UnityRefs.csproj
+          PKG="$HOME/.nuget/packages/unityengine.modules/2019.4.40"
+          test -d "$PKG"
+          find "$PKG" -maxdepth 4 -type f -printf '%P\n' | sort | head -200
+          tar -C "$HOME/.nuget/packages" -czf /tmp/UnityEngine.Modules-2019.4.40.tar.gz unityengine.modules/2019.4.40
+          ls -lh /tmp/UnityEngine.Modules-2019.4.40.tar.gz
 
-          mkdir -p lib/interop
-          dotnet restore Jaket.Mobile.Exact.csproj
-          rm -rf .git
-
-      - name: Assemble portable .NET build environment
-        shell: bash
-        run: |
-          set -euxo pipefail
-          ROOT=/tmp/jm-private-build
-          DOT=$ROOT/dotnet
-          mkdir -p "$DOT/host/fxr" "$DOT/shared/Microsoft.NETCore.App" "$DOT/sdk" "$DOT/packs" "$ROOT/nuget"
-
-          SDK_VER=$(dotnet --version)
-          FXR_VER=$(basename "$(ls -d /usr/share/dotnet/host/fxr/10.* | sort -V | tail -1)")
-          RT_VER=$(basename "$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/10.* | sort -V | tail -1)")
-          REF8=$(ls -d /usr/share/dotnet/packs/Microsoft.NETCore.App.Ref/8.* | sort -V | tail -1)
-          NETSTD=$(ls -d /usr/share/dotnet/packs/NETStandard.Library.Ref/* | sort -V | tail -1)
-
-          cp /usr/share/dotnet/dotnet "$DOT/"
-          cp -a "/usr/share/dotnet/host/fxr/$FXR_VER" "$DOT/host/fxr/"
-          cp -a "/usr/share/dotnet/shared/Microsoft.NETCore.App/$RT_VER" "$DOT/shared/Microsoft.NETCore.App/"
-          cp -a "/usr/share/dotnet/sdk/$SDK_VER" "$DOT/sdk/"
-          cp -a "$REF8" "$DOT/packs/"
-          cp -a "$NETSTD" "$DOT/packs/"
-
-          cp -a "$HOME/.nuget/packages/." "$ROOT/nuget/"
-          mv /tmp/jm-build "$ROOT/source"
-
-          DOTNET_ROOT="$DOT" NUGET_PACKAGES="$ROOT/nuget" "$DOT/dotnet" --info
-          DOTNET_ROOT="$DOT" NUGET_PACKAGES="$ROOT/nuget" "$DOT/dotnet" restore "$ROOT/source/Jaket.Mobile.Exact.csproj" --ignore-failed-sources
-
-          tar -C /tmp -czf /tmp/JaketMobile-private-build-workspace.tar.gz jm-private-build
-          ls -lh /tmp/JaketMobile-private-build-workspace.tar.gz
-
-      - name: Upload private build workspace
+      - name: Upload Unity managed references
         uses: actions/upload-artifact@v4
         with:
-          name: JaketMobile-private-build-workspace
-          path: /tmp/JaketMobile-private-build-workspace.tar.gz
+          name: UnityEngine.Modules-2019.4.40
+          path: /tmp/UnityEngine.Modules-2019.4.40.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
