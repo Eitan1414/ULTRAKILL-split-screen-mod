@@ -12,24 +12,12 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
+  interop-cli:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-
-      - name: Verify UltraDroid extracted input is downloadable
-        shell: bash
-        run: |
-          set -euxo pipefail
-          python3 -m pip install --user --quiet gdown
-          python3 -m gdown 'https://drive.google.com/uc?id=1NAdCfh6OFp1xfnz69_tqCx95_gn67Hso' -O /tmp/JaketMobile_build_input_TEMP.zip
-          ls -lh /tmp/JaketMobile_build_input_TEMP.zip
-          unzip -t /tmp/JaketMobile_build_input_TEMP.zip
-          unzip -l /tmp/JaketMobile_build_input_TEMP.zip
-
       - name: Probe Il2CppInterop CLI package
         shell: bash
         run: |
@@ -38,9 +26,13 @@ jobs:
           dotnet package search Il2CppInterop.CLI --source "$SOURCE" --take 30 --format json
           mkdir -p /tmp/interop-cli
           dotnet tool install Il2CppInterop.CLI --tool-path /tmp/interop-cli --add-source "$SOURCE" --prerelease
+          find /tmp/interop-cli -maxdepth 2 -type f -printf '%P\n' | sort
           /tmp/interop-cli/il2cppinterop --help
           /tmp/interop-cli/il2cppinterop generate --help
 
+  unity-libs:
+    runs-on: ubuntu-latest
+    steps:
       - name: Verify Unity 2019.4.40 base libraries
         shell: bash
         run: |
